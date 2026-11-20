@@ -1,0 +1,2 @@
+# The worker intentionally uses only the Python 3.9+ standard library (system Python on macOS).
+# No third-party packages are required.

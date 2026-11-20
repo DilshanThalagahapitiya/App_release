@@ -72,3 +72,18 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Cloudflare / local
+.dev.vars
+.wrangler/
+.open-next/
+cloudflare-env.d.ts
+worker/.env
+worker/.venv/
+__pycache__/
+
+*.tsbuildinfo
+next-env.d.ts
+.env.local
+
+.owner-password.txt

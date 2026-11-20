@@ -1,0 +1,98 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ipa-platform",
+	"main": "src/worker-entry.ts",
+	"compatibility_date": "2026-04-01",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"APP_URL": "http://localhost:3000",
+		"ENVIRONMENT": "development"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ipa-platform-dev",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "ipa-platform-dev"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "NOTIFY_QUEUE",
+				"queue": "ipa-platform-notify-dev"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "ipa-platform-notify-dev",
+				"max_retries": 5
+			}
+		]
+	},
+	"triggers": {
+		"crons": [
+			"*/5 * * * *",
+			"17 3 * * *"
+		]
+	},
+	"env": {
+		"production": {
+			"name": "ipa-platform-prod",
+			"vars": {
+				"APP_URL": "https://REPLACE-WITH-YOUR-DOMAIN",
+				"ENVIRONMENT": "production"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "ipa-platform-prod",
+					"database_id": "97d4e150-b455-4929-98e5-dbb35567198c",
+					"migrations_dir": "migrations"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET",
+					"bucket_name": "ipa-platform-prod"
+				}
+			],
+			"queues": {
+				"producers": [
+					{
+						"binding": "NOTIFY_QUEUE",
+						"queue": "ipa-platform-notify-prod"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "ipa-platform-notify-prod",
+						"max_retries": 5
+					}
+				]
+			},
+			"triggers": {
+				"crons": [
+					"*/5 * * * *",
+					"17 3 * * *"
+				]
+			}
+		}
+	}
+}

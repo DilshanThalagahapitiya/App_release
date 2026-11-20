@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f1f3f6; --border: #e3e6ec; --border-strong: #cdd2dc;
+  --text: #14171f; --text-2: #4a5263; --text-3: #6b7385;
+  --accent: #2f5bea; --accent-hover: #2449c6; --accent-soft: #e9efff; --accent-text: #ffffff;
+  --good: #14794a; --good-soft: #e3f5ec; --warn: #9a5b00; --warn-soft: #fff1d6; --bad: #b42318; --bad-soft: #fde8e6; --info-soft: #e9efff;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --border: #272d39; --border-strong: #38404f;
+    --text: #e8ebf1; --text-2: #aeb6c6; --text-3: #8a93a6;
+    --accent: #6c8cff; --accent-hover: #8aa3ff; --accent-soft: #1d2745; --accent-text: #0b0f1a;
+    --good: #4cc28a; --good-soft: #12301f; --warn: #f0b24a; --warn-soft: #35270c; --bad: #ff8a80; --bad-soft: #3a1714; --info-soft: #1d2745;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --surface: #161a22; --surface-2: #1d222c; --border: #272d39; --border-strong: #38404f;
+  --text: #e8ebf1; --text-2: #aeb6c6; --text-3: #8a93a6;
+  --accent: #6c8cff; --accent-hover: #8aa3ff; --accent-soft: #1d2745; --accent-text: #0b0f1a;
+  --good: #4cc28a; --good-soft: #12301f; --warn: #f0b24a; --warn-soft: #35270c; --bad: #ff8a80; --bad-soft: #3a1714; --info-soft: #1d2745;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+
+html { background: var(--bg); }
+body { background: var(--bg); color: var(--text); font-family: ui-sans-serif, -apple-system, "Inter", "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+a { color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.muted { color: var(--text-3); }
+.skeleton { background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2)); background-size: 200% 100%; animation: sk 1.4s infinite; border-radius: 8px; }
+@keyframes sk { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

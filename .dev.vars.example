@@ -1,0 +1,11 @@
+# Copy to .dev.vars for local `next dev` / `wrangler dev`. Never commit .dev.vars.
+URL_SIGNING_SECRET=change-me-to-a-long-random-string
+BOOTSTRAP_OWNER_EMAIL=owner@example.com
+BOOTSTRAP_OWNER_PASSWORD=change-me-on-first-login
+# Optional
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+EMAIL_PROVIDER=none
+EMAIL_FROM_ADDRESS=
+EMAIL_FROM_NAME=
+EMAIL_API_KEY=
