@@ -53,7 +53,11 @@ export function jsonResponse(status: number, payload: unknown, requestId: string
 export function sameOrigin(req: Request, env: AppEnv): boolean {
   const origin = req.headers.get("origin");
   const expected = new URL(env.APP_URL).origin;
-  if (origin) return origin === expected;
+  if (origin) {
+    if (origin === expected) return true;
+    // Local mode only: allow opening the app directly on this Mac (fast uploads, no tunnel).
+    return env.ENVIRONMENT === "development" && /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin);
+  }
   const site = req.headers.get("sec-fetch-site");
   return site === "same-origin" || site === "none";
 }

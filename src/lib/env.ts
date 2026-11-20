@@ -32,5 +32,6 @@ export async function getEnv(): Promise<AppEnv> {
 }
 
 export function isSecure(env: AppEnv): boolean {
-  return env.APP_URL.startsWith("https://");
+  // In local development the same session must also work on http://127.0.0.1.
+  return env.APP_URL.startsWith("https://") && env.ENVIRONMENT !== "development";
 }
