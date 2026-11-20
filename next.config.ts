@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
       },
       {
         // Protected pages and APIs must never be stored by shared caches.
-        source: "/(app|portal|d|api)/:path*",
+        source: "/(app|portal|d|u|api)/:path*",
         headers: [{ key: "Cache-Control", value: "private, no-store" }],
       },
     ];

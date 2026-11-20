@@ -17,8 +17,9 @@ export function useAct<V = void, R = unknown>(fn: (v: V) => Promise<R>, opts: { 
   });
 }
 export function Async<T>({ q, children, skeleton }: { q: { isLoading: boolean; error: unknown; data?: T; refetch: () => void }; children: (d: T) => React.ReactNode; skeleton?: React.ReactNode }) {
-  if (q.isLoading) return <>{skeleton ?? <LoadingSkeleton />}</>;
   if (q.error) return <ErrorState error={q.error} retry={() => q.refetch()} />;
+  // A query that is disabled (waiting on another request) has no data yet: show the loading state, never call children(undefined).
+  if (q.isLoading || q.data === undefined) return <>{skeleton ?? <LoadingSkeleton />}</>;
   return <>{children(q.data as T)}</>;
 }
 

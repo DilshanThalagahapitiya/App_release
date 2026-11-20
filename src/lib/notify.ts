@@ -7,7 +7,7 @@ import { placeholders } from "./access";
 
 export const NOTIFICATION_TYPES = [
   "invitation_received", "build_uploaded", "validation_completed", "validation_failed", "build_published",
-  "feedback_received", "feedback_status_changed", "feedback_reply", "link_expiring", "link_revoked",
+  "feedback_received", "feedback_status_changed", "feedback_reply", "link_expiring", "link_revoked", "device_submitted",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
