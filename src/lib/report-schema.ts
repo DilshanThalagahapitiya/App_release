@@ -51,6 +51,7 @@ export const validationReportSchema = z.object({
       expired: z.boolean().optional(),
       deviceRegistrationRequired: z.boolean().optional(),
       deviceCount: z.number().int().nonnegative().nullable().optional(),
+      devices: z.array(str(64)).max(5000).nullable().optional(),
       appIdMatchesBundle: z.boolean().nullable().optional(),
     })
     .default({ present: false, profileType: "none" }),

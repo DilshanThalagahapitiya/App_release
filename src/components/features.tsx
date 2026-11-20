@@ -64,7 +64,7 @@ export function PipelineStages({ b, job }: { b: Pick<BuildDto, "processing_statu
   );
 }
 
-export interface ReportDto { overall_status: string; eligibility_status: string; metadata: { file?: { sizeBytes: number; sha256: string } }; signing: { verification?: string; identitySummary?: string; teamIdentifier?: string }; profile: { present?: boolean; profileType?: string; expiresAt?: string; expired?: boolean; deviceCount?: number | null; deviceRegistrationRequired?: boolean; name?: string; teamIdentifier?: string; appIdMatchesBundle?: boolean | null }; entitlements: { getTaskAllow?: boolean | null; apsEnvironment?: string | null; associatedDomainsCount?: number; keys?: string[] }; checks: { code: string; status: string; message: string }[]; warnings: string[]; errors: { code: string; message: string }[]; limitations: string[]; completed_at: string; worker_version: string | null }
+export interface ReportDto { overall_status: string; eligibility_status: string; metadata: { file?: { sizeBytes: number; sha256: string } }; signing: { verification?: string; identitySummary?: string; teamIdentifier?: string }; profile: { present?: boolean; profileType?: string; expiresAt?: string; expired?: boolean; deviceCount?: number | null; devices?: string[] | null; deviceRegistrationRequired?: boolean; name?: string; teamIdentifier?: string; appIdMatchesBundle?: boolean | null }; entitlements: { getTaskAllow?: boolean | null; apsEnvironment?: string | null; associatedDomainsCount?: number; keys?: string[] }; checks: { code: string; status: string; message: string }[]; warnings: string[]; errors: { code: string; message: string }[]; limitations: string[]; completed_at: string; worker_version: string | null }
 
 const ELIG_COPY: Record<string, string> = {
   eligible: "Passed every check this platform can perform. Installation still depends on the target device being covered by the provisioning profile.",
@@ -85,13 +85,34 @@ export function EligibilityPanel({ b, report }: { b: Pick<BuildDto, "eligibility
   );
 }
 
+function RegisteredDevices({ count, devices }: { count: number | null; devices: string[] | null }) {
+  const [open, setOpen] = React.useState(false); const [f, setF] = React.useState(""); const [copied, setCopied] = React.useState(false);
+  if (!devices) return <span>{count ?? "?"} <span className="text-[var(--text-2)]">(list not stored for this build — use Re-validate to load it)</span></span>;
+  const shown = devices.filter((d) => d.toLowerCase().includes(f.trim().toLowerCase()));
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="font-medium text-[var(--accent)] underline underline-offset-2">{devices.length} {open ? "(hide list)" : "(click to show all)"}</button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={f} onChange={(e) => setF(e.target.value)} placeholder="Search a device ID…" aria-label="Search device IDs" className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-transparent px-2.5 py-1.5 text-[13px]" />
+            <button type="button" className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[13px]" onClick={() => { void navigator.clipboard?.writeText(devices.join("\n")); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy all"}</button>
+          </div>
+          <ol className="max-h-72 overflow-auto rounded-lg border border-[var(--border)] p-2 text-xs">{shown.map((d) => <li key={d} className="py-0.5 font-mono break-all">{d}</li>)}{!shown.length && <li className="text-[var(--text-2)]">No match.</li>}</ol>
+          <p className="text-xs text-[var(--text-2)]">{shown.length} of {devices.length} shown. Only project staff can see this list.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ValidationSummary({ report }: { report: ReportDto }) {
   const p = report.profile; const s = report.signing;
   return (
     <div className="space-y-4">
       <Card title="Signing & provisioning (summary)">
         <KV items={[["Signature verification", <StatusBadge key="v" status={s.verification === "valid" ? "good" : s.verification === "invalid" || s.verification === "unsigned" ? "failed" : "needs_review"}>{label(s.verification ?? "not performed")}</StatusBadge>], ["Signing identity", s.identitySummary], ["Team identifier", s.teamIdentifier ?? p.teamIdentifier],
-          ["Profile type", label(p.profileType ?? "none")], ["Profile present", p.present ? "Yes" : "No"], ["Profile expires", fmtDate(p.expiresAt)], ["Registered devices", p.deviceRegistrationRequired ? `${p.deviceCount ?? "?"} (identifiers are never shown)` : "Not device-restricted"],
+          ["Profile type", label(p.profileType ?? "none")], ["Profile present", p.present ? "Yes" : "No"], ["Profile expires", fmtDate(p.expiresAt)], ["Registered devices", p.deviceRegistrationRequired ? <RegisteredDevices key="rd" count={p.deviceCount ?? null} devices={p.devices ?? null} /> : "Not device-restricted"],
           ["App ID matches bundle", p.appIdMatchesBundle == null ? "Unknown" : p.appIdMatchesBundle ? "Yes" : "No"], ["get-task-allow", report.entitlements.getTaskAllow == null ? "—" : String(report.entitlements.getTaskAllow)], ["Push environment", report.entitlements.apsEnvironment], ["Entitlement keys", report.entitlements.keys?.length ?? 0]]} />
       </Card>
       <Card title="Checks performed">

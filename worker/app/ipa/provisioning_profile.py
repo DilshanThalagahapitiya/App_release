@@ -24,7 +24,7 @@ def _iso(v: Any) -> Optional[str]:
 
 
 def summarise_profile(p: Dict[str, Any], bundle_id: Optional[str], now: Optional[dt.datetime] = None) -> Dict[str, Any]:
-    """Facts only. Device identifiers (UDIDs) are counted but never copied into the report."""
+    """Facts only. Registered device identifiers (UDIDs) are listed so staff can check who is covered."""
     now = now or dt.datetime.now(dt.timezone.utc)
     ent = p.get("Entitlements") if isinstance(p.get("Entitlements"), dict) else {}
     devices = p.get("ProvisionedDevices")
@@ -60,5 +60,6 @@ def summarise_profile(p: Dict[str, Any], bundle_id: Optional[str], now: Optional
         "expired": expired,
         "deviceRegistrationRequired": isinstance(devices, list),
         "deviceCount": len(devices) if isinstance(devices, list) else None,
+        "devices": sorted({d for d in devices if isinstance(d, str)})[:5000] if isinstance(devices, list) else None,
         "appIdMatchesBundle": matches,
     }

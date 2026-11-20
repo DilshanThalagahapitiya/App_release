@@ -43,7 +43,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(s["profileType"], "ad_hoc")
         self.assertEqual(s["deviceCount"], 2)
         self.assertTrue(s["appIdMatchesBundle"])
-        self.assertNotIn("UDID1", str(s))  # device identifiers never leave the worker
+        self.assertEqual(s["devices"], ["UDID1", "UDID2"])
 
     def test_development(self):
         p = profile(Entitlements={"application-identifier": "TEAM123456.com.example.app", "get-task-allow": True})
