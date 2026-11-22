@@ -171,21 +171,56 @@ export async function createBuild(
   if ((input.distributionMethod === "testflight" || input.distributionMethod === "app_store") && !input.externalInstallUrl)
     throw new ApiError("VALIDATION_ERROR", "An official Apple install/invitation URL is required for TestFlight and App Store distribution.");
   const now = nowIso(); const jobId = newId();
-  await batch(env.DB, [
-    stmt(env.DB,
-      `INSERT INTO builds (id, organisation_id, project_id, uploaded_by, original_filename, r2_object_key, file_size_bytes, sha256, release_title, release_notes, internal_notes,
+  const validationOff = (await getSettings(env)).validationMode === "off";
+  if (validationOff && !project.expected_bundle_identifier)
+    throw new ApiError("VALIDATION_ERROR", "Validation is turned off, so the app's bundle identifier cannot be read from the IPA. Set the project's \"Expected bundle identifier\" (Project → Settings) first.");
+  const buildSql = validationOff
+    ? `INSERT INTO builds (id, organisation_id, project_id, uploaded_by, original_filename, r2_object_key, file_size_bytes, sha256, release_title, release_notes, internal_notes,
+         declared_version, declared_build_number, distribution_method, external_install_url, allow_download_when_ineligible, validation_status, eligibility_status, processing_status, uploaded_at, created_at, updated_at,
+         app_name, bundle_identifier, version, build_number, validated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'completed','eligible_with_warnings','complete', ?,?,?, ?,?,?,?,?)`
+    : `INSERT INTO builds (id, organisation_id, project_id, uploaded_by, original_filename, r2_object_key, file_size_bytes, sha256, release_title, release_notes, internal_notes,
          declared_version, declared_build_number, distribution_method, external_install_url, allow_download_when_ineligible, validation_status, eligibility_status, processing_status, uploaded_at, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending','needs_review','queued_for_validation', ?,?,?)`,
-      s.build_id, s.organisation_id, s.project_id, actor.userId, s.original_filename, s.r2_object_key, s.expected_size_bytes, s.expected_sha256,
-      input.releaseTitle ?? null, input.releaseNotes ?? null, input.internalNotes ?? null, input.declaredVersion ?? null, input.declaredBuildNumber ?? null,
-      input.distributionMethod, input.externalInstallUrl ?? null, input.allowDownloadWhenIneligible ? 1 : 0, now, now, now),
-    stmt(env.DB, "INSERT INTO build_files (id, build_id, file_type, r2_object_key, mime_type, size_bytes, sha256, created_at) VALUES (?,?,?,?,?,?,?,?)",
-      newId(), s.build_id, "ipa", s.r2_object_key, "application/octet-stream", s.expected_size_bytes, s.expected_sha256, now),
-    stmt(env.DB, "INSERT INTO worker_jobs (id, build_id, job_type, status, max_attempts, input_json, idempotency_key, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-      jobId, s.build_id, "validate_ipa", "queued", 3,
-      JSON.stringify({ expectedSha256: s.expected_sha256, expectedSizeBytes: s.expected_size_bytes, expectedBundleIdentifier: project.expected_bundle_identifier }),
-      `validate:${s.build_id}:initial`, now, now),
-  ]);
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending','needs_review','queued_for_validation', ?,?,?)`;
+  const buildArgs: unknown[] = [
+    s.build_id, s.organisation_id, s.project_id, actor.userId, s.original_filename, s.r2_object_key, s.expected_size_bytes, s.expected_sha256,
+    input.releaseTitle ?? null, input.releaseNotes ?? null, input.internalNotes ?? null, input.declaredVersion ?? null, input.declaredBuildNumber ?? null,
+    input.distributionMethod, input.externalInstallUrl ?? null, input.allowDownloadWhenIneligible ? 1 : 0, now, now, now,
+    ...(validationOff ? [project.app_display_name ?? project.name, project.expected_bundle_identifier, input.declaredVersion ?? "1.0", input.declaredBuildNumber ?? "1", now] : []),
+  ];
+  const fileStmt = stmt(env.DB, "INSERT INTO build_files (id, build_id, file_type, r2_object_key, mime_type, size_bytes, sha256, created_at) VALUES (?,?,?,?,?,?,?,?)",
+    newId(), s.build_id, "ipa", s.r2_object_key, "application/octet-stream", s.expected_size_bytes, s.expected_sha256, now);
+  if (validationOff) {
+    // Validation is OFF: nothing inspects the IPA. Record that fact in a synthetic "skipped" job + report so the rest of the
+    // flow (publish, links, install, UDIDs) works unchanged, and so the limits are visible to staff.
+    const profileType = ["ad_hoc", "enterprise", "development"].includes(input.distributionMethod) ? input.distributionMethod : "ad_hoc";
+    const warn = "Validation is OFF: this IPA was not inspected. Signature, provisioning profile, expiry and registered devices were NOT checked. Installation on a device is not guaranteed.";
+    await batch(env.DB, [
+      stmt(env.DB, buildSql, ...buildArgs),
+      fileStmt,
+      stmt(env.DB, "INSERT INTO worker_jobs (id, build_id, job_type, status, attempt_count, max_attempts, progress_percent, stage, progress_message, idempotency_key, completed_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        jobId, s.build_id, "validate_ipa", "completed", 0, 1, 100, "skipped", "Validation turned off", `skip:${s.build_id}`, now, now, now),
+      stmt(env.DB, `INSERT INTO validation_reports (id, build_id, worker_job_id, attempt, worker_version, overall_status, eligibility_status, metadata_json, signing_summary_json, profile_summary_json, entitlements_summary_json, checks_json, warnings_json, errors_json, limitations_json, started_at, completed_at, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        newId(), s.build_id, jobId, 0, "validation-off", "completed", "eligible_with_warnings",
+        JSON.stringify({ file: { sizeBytes: s.expected_size_bytes, sha256: s.expected_sha256 }, app: { bundleIdentifier: project.expected_bundle_identifier, version: input.declaredVersion ?? "1.0", buildNumber: input.declaredBuildNumber ?? "1" } }),
+        JSON.stringify({ verification: "not_performed" }),
+        JSON.stringify({ present: false, profileType, deviceRegistrationRequired: profileType !== "enterprise" }),
+        JSON.stringify({}),
+        JSON.stringify([{ code: "VALIDATION_OFF", status: "skipped", message: "Validation is turned off in platform settings." }]),
+        JSON.stringify([warn]), JSON.stringify([]),
+        JSON.stringify(["No inspection was performed. Values shown come from the project settings and the upload form, not from the IPA."]), now, now, now),
+    ]);
+  } else {
+    await batch(env.DB, [
+      stmt(env.DB, buildSql, ...buildArgs),
+      fileStmt,
+      stmt(env.DB, "INSERT INTO worker_jobs (id, build_id, job_type, status, max_attempts, input_json, idempotency_key, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        jobId, s.build_id, "validate_ipa", "queued", 3,
+        JSON.stringify({ expectedSha256: s.expected_sha256, expectedSizeBytes: s.expected_size_bytes, expectedBundleIdentifier: project.expected_bundle_identifier }),
+        `validate:${s.build_id}:initial`, now, now),
+    ]);
+  }
   await audit(env, { organisationId: s.organisation_id, actorUserId: actor.userId, action: "build.created", resourceType: "build", resourceId: s.build_id, metadata: { jobId }, req });
   await notify(env, { userIds: (await projectStaffIds(env, project.id, project.organisation_id)).filter((u) => u !== actor.userId), organisationId: project.organisation_id, type: "build_uploaded", title: `New build uploaded to ${project.name}`, resourceType: "build", resourceId: s.build_id, path: `/app/builds/${s.build_id}` });
   return buildDto((await one<BuildRow>(env.DB, "SELECT * FROM builds WHERE id = ?", s.build_id))!, true);

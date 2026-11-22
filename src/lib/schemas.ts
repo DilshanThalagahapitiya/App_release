@@ -110,6 +110,7 @@ export const settingsSchema = z.object({
   defaultLinkExpiryDays: z.number().int().min(1).max(365).optional(),
   auditRetentionDays: z.number().int().min(30).max(3650).optional(),
   downloadEventRetentionDays: z.number().int().min(7).max(3650).optional(),
+  validationMode: z.enum(["on", "off"]).optional(),
 }).strict();
 
 export const paginationSchema = z.object({

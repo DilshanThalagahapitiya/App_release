@@ -10,6 +10,8 @@ export interface PlatformSettings {
   defaultLinkExpiryDays: number;
   auditRetentionDays: number;
   downloadEventRetentionDays: number;
+  /** "on": every upload is validated by the macOS worker. "off": uploads are accepted as-is (no Mac needed). */
+  validationMode: "on" | "off";
 }
 
 export const SETTING_DEFAULTS: PlatformSettings = {
@@ -19,6 +21,7 @@ export const SETTING_DEFAULTS: PlatformSettings = {
   defaultLinkExpiryDays: 14,
   auditRetentionDays: 365,
   downloadEventRetentionDays: 180,
+  validationMode: "on",
 };
 
 export async function getSettings(env: AppEnv): Promise<PlatformSettings> {
