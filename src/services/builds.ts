@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { loadBuild, loadProject } from "@/lib/access";
 import { can } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
+import { runCloudCheck } from "@/services/cloud-check";
 import { keys, isZip, sha256OfObject } from "@/lib/storage";
 import { notify, projectStaffIds, projectMemberIds } from "@/lib/notify";
 import type { BuildRow } from "@/lib/types";
@@ -171,7 +172,8 @@ export async function createBuild(
   if ((input.distributionMethod === "testflight" || input.distributionMethod === "app_store") && !input.externalInstallUrl)
     throw new ApiError("VALIDATION_ERROR", "An official Apple install/invitation URL is required for TestFlight and App Store distribution.");
   const now = nowIso(); const jobId = newId();
-  const validationOff = (await getSettings(env)).validationMode === "off";
+  const mode = (await getSettings(env)).validationMode;
+  const validationOff = mode === "off";
   if (validationOff && !project.expected_bundle_identifier)
     throw new ApiError("VALIDATION_ERROR", "Validation is turned off, so the app's bundle identifier cannot be read from the IPA. Set the project's \"Expected bundle identifier\" (Project → Settings) first.");
   const buildSql = validationOff
@@ -211,6 +213,9 @@ export async function createBuild(
         JSON.stringify([warn]), JSON.stringify([]),
         JSON.stringify(["No inspection was performed. Values shown come from the project settings and the upload form, not from the IPA."]), now, now, now),
     ]);
+  } else if (mode === "cloud") {
+    await batch(env.DB, [stmt(env.DB, buildSql, ...buildArgs), fileStmt]);
+    await runCloudCheck(env, s.build_id, { actorUserId: actor.userId, notifyStaff: false });
   } else {
     await batch(env.DB, [
       stmt(env.DB, buildSql, ...buildArgs),
@@ -350,6 +355,11 @@ export async function deleteBuild(env: AppEnv, actor: Actor, buildId: string, re
 
 export async function revalidateBuild(env: AppEnv, actor: Actor, buildId: string, req?: Request) {
   const { build, project } = await loadBuild(env, actor, buildId, "build:revalidate");
+  if ((await getSettings(env)).validationMode === "cloud") {
+    const r = await runCloudCheck(env, buildId, { actorUserId: actor.userId });
+    await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "build.revalidation_requested", resourceType: "build", resourceId: buildId, metadata: { cloud: true }, req });
+    return { jobId: r.jobId };
+  }
   const active = await one(env.DB, "SELECT id FROM worker_jobs WHERE build_id = ? AND status IN ('queued','claimed','running')", buildId);
   if (active) throw new ApiError("CONFLICT", "A validation job is already queued or running for this build.");
   const jobId = newId(); const now = nowIso();

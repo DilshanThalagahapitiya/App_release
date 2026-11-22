@@ -10,8 +10,8 @@ export interface PlatformSettings {
   defaultLinkExpiryDays: number;
   auditRetentionDays: number;
   downloadEventRetentionDays: number;
-  /** "on": every upload is validated by the macOS worker. "off": uploads are accepted as-is (no Mac needed). */
-  validationMode: "on" | "off";
+  /** "on": macOS worker validates every upload. "cloud": inspected inside the cloud (no Mac, signature not verified). "off": accepted as-is. */
+  validationMode: "on" | "cloud" | "off";
 }
 
 export const SETTING_DEFAULTS: PlatformSettings = {
