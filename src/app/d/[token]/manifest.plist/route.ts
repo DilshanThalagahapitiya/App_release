@@ -1,6 +1,7 @@
 import { api } from "@/lib/http";
 import { ApiError } from "@/lib/errors";
 import { consumeDownload, logEvent, manifestFor, resolveLink } from "@/services/distribution";
+import { setInstallStage } from "@/services/install-progress";
 // iOS fetches this without cookies, so access is carried by the short-lived signed `a` grant created when the page rendered.
 export const GET = api(async (c) => {
   const r = await resolveLink(c.env, c.req, c.params.token, { grant: c.url.searchParams.get("a") });
@@ -8,5 +9,6 @@ export const GET = api(async (c) => {
   const xml = await manifestFor(c.env, r);
   if (!r.staffPreview) await consumeDownload(c.env, r);
   await logEvent(c.env, r, c.req, "manifest_requested");
+  await setInstallStage(c.env, c.req, r.link.id, "manifest");
   return new Response(xml, { headers: { "content-type": "text/xml; charset=utf-8", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
 }, { auth: "public", rate: ["manifest", 120, 600] });

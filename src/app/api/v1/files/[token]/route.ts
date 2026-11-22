@@ -4,6 +4,7 @@ import { one } from "@/lib/db";
 import { downloadHeaders, verifyFileGrant } from "@/lib/storage";
 import { audit } from "@/lib/audit";
 import { safeFilename } from "@/lib/rules";
+import { setInstallStage } from "@/services/install-progress";
 
 // Streams a private R2 object after verifying a short-lived HMAC grant. The grant names a DB record, never an object key.
 export const GET = api(async (c) => {
@@ -32,6 +33,7 @@ export const GET = api(async (c) => {
     if (start > end || start >= head.size) return new Response(null, { status: 416, headers: { "content-range": `bytes */${head.size}` } });
     const part = await c.env.BUCKET.get(key, { range: { offset: start, length: end - start + 1 } });
     if (!part) throw new ApiError("NOT_FOUND", "File not found.");
+    if (g.k === "build" && g.lid) await setInstallStage(c.env, c.req, g.lid, end + 1 >= head.size ? "downloaded" : "downloading", end + 1, head.size);
     const h = downloadHeaders(name, type, end - start + 1, inline);
     h.set("content-range", `bytes ${start}-${end}/${head.size}`); h.set("accept-ranges", "bytes");
     return new Response(part.body, { status: 206, headers: h });
@@ -40,5 +42,16 @@ export const GET = api(async (c) => {
   if (!obj) throw new ApiError("NOT_FOUND", "File not found.");
   if (g.k === "build" && g.lid) await audit(c.env, { organisationId: org, actorUserId: g.uid ?? null, actorType: g.uid ? "user" : "anonymous", action: "distribution.file_served", resourceType: "distribution_link", resourceId: g.lid, req: c.req });
   const h = downloadHeaders(name, type, head.size, inline); h.set("accept-ranges", "bytes");
-  return new Response(obj.body, { status: 200, headers: h });
+  let body: ReadableStream = obj.body;
+  if (g.k === "build" && g.lid) {
+    // Count bytes as they are sent so the person installing can see real download progress (updated every ~10%).
+    const lid = g.lid; const total = head.size; let sent = 0; let mark = total / 10;
+    await setInstallStage(c.env, c.req, lid, "downloading", 0, total);
+    const counter = new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, ctrl) { ctrl.enqueue(chunk); sent += chunk.byteLength; if (sent >= mark && sent < total) { mark += total / 10; await setInstallStage(c.env, c.req, lid, "downloading", sent, total); } },
+      async flush() { await setInstallStage(c.env, c.req, lid, "downloaded", total, total); },
+    });
+    body = obj.body.pipeThrough(counter);
+  }
+  return new Response(body, { status: 200, headers: h });
 }, { auth: "public", rate: ["files", 600, 600] });

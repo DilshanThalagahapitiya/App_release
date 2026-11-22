@@ -46,7 +46,7 @@ export default async function DistributionPage({ params }: { params: Promise<{ t
         <p className="mt-0.5 text-[15px] text-[var(--text-2)]">Version {v.version ?? "?"} ({v.buildNumber ?? "?"})</p>
         <p className="text-[13px] text-[var(--text-3)]">{v.organisation} · {v.project}</p>
         <div className="mt-5 space-y-3 text-left">
-          {action.kind === "ota" && <PublicActions kind="ota" installHref={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifest)}`} token={token} />}
+          {action.kind === "ota" && <PublicActions kind="ota" installHref={`itms-services://?action=download-manifest&url=${encodeURIComponent(manifest)}`} token={token} appName={v.appName} statusHref={`/d/${token}/install-status?a=${encodeURIComponent(grant)}`} />}
           {action.kind === "external" && <a href={r.build.external_install_url!} rel="noopener noreferrer" className="block rounded-2xl bg-[var(--accent)] px-4 py-4 text-center text-[19px] font-semibold" style={{ color: "var(--accent-text)", textDecoration: "none" }}>{action.label}</a>}
           {action.kind === "download" && <PublicActions kind="download" installHref={`/d/${token}/download?a=${encodeURIComponent(grant)}`} token={token} />}
           {action.kind === "none" && <p className="rounded-xl bg-[var(--surface-2)] px-4 py-3 text-[14px]">No install button is shown: {action.reason}</p>}
