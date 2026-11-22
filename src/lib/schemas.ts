@@ -88,6 +88,7 @@ export const linkCreateSchema = z.object({
   customerReleaseNotes: optText(8000), installationGuidance: optText(4000),
   kind: z.enum(["install", "preview"]).default("install"),
 });
+export const previewSharingSchema = z.object({ allMembers: z.boolean().default(false), userIds: z.array(z.string().uuid()).max(500).default([]) });
 export const previewUpdateSchema = z.object({
   device: z.string().regex(/^[a-z0-9]{3,40}$/), expiresAt: z.string().datetime().nullable(), enabled: z.boolean(),
   /** "min" = match the app's minimum iOS, "latest" = Appetize's newest, or a major version such as "18". */

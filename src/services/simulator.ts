@@ -9,6 +9,7 @@ import { loadBuild, loadProject } from "@/lib/access";
 import { signedFileUrl } from "@/lib/storage";
 import { derivePublicToken } from "@/services/distribution";
 import { hashToken } from "@/lib/crypto";
+import { notify } from "@/lib/notify";
 import { createApp, updateApp, setAppDisabled, deleteApp, appetizeConfigured, embedUrl, hostedUrl, AppetizeError, IOS_DEVICES, pickOsVersion, osVersionsFor } from "@/lib/appetize";
 import { getSettings } from "@/lib/settings";
 import { detectArchiveKind, inspectSimulatorTarGz, inspectSimulatorZip, SimulatorInspectError, type SimulatorInspection } from "@/lib/simulator-inspect";
@@ -125,7 +126,6 @@ export async function runPreviewUpload(env: AppEnv, previewId: string): Promise<
     const app = p.mode === "update" && p.appetize_public_key ? await updateApp(env, p.appetize_public_key, input) : await createApp(env, input);
     await run(env.DB, "UPDATE simulator_previews SET status = 'ready', status_detail = NULL, error_code = NULL, appetize_public_key = ?, appetize_version_code = ?, appetize_disabled = 0, next_attempt_at = NULL, ready_at = ?, updated_at = ? WHERE id = ?",
       app.publicKey, app.versionCode, nowIso(), nowIso(), p.id);
-    await ensurePreviewMemberLink(env, p.id).catch(() => undefined);
     await audit(env, { organisationId: p.organisation_id, action: "simulator_preview.ready", resourceType: "build", resourceId: p.build_id, metadata: { mode: p.mode } });
     return { status: "ready" };
   } catch (e) {
@@ -134,23 +134,60 @@ export async function runPreviewUpload(env: AppEnv, previewId: string): Promise<
   }
 }
 
-/**
- * Every Ready preview is shown to the project's members (QA testers) in their app under "Available builds":
- * a standard "project members" preview link, created by the system for the uploader. Staff can revoke it on the Preview tab.
- */
-export async function ensurePreviewMemberLink(env: AppEnv, previewId: string): Promise<void> {
-  const p = await one<SimulatorPreviewRow>(env.DB, "SELECT * FROM simulator_previews WHERE id = ?", previewId);
-  const build = p ? await one<BuildRow>(env.DB, "SELECT * FROM builds WHERE id = ? AND deleted_at IS NULL", p.build_id) : null;
-  if (!p || !build || p.status !== "ready") return;
-  const has = await one(env.DB, "SELECT id FROM distribution_links WHERE build_id = ? AND kind = 'preview' AND access_scope = 'project_members' AND status = 'active' LIMIT 1", build.id);
-  if (has) return;
-  const createdBy = build.uploaded_by ?? p.created_by;
-  if (!createdBy) return;
+// ---------------------------------------------------------------- sharing with members
+const NAMED_TITLE = "Shared with selected members";
+const ALL_TITLE = "Shared with all project members";
+const managedLink = (env: AppEnv, buildId: string, scope: "named_users" | "project_members") =>
+  one<{ id: string }>(env.DB, "SELECT id FROM distribution_links WHERE build_id = ? AND kind = 'preview' AND access_scope = ? AND title = ? AND status = 'active' LIMIT 1", buildId, scope, scope === "named_users" ? NAMED_TITLE : ALL_TITLE);
+
+async function insertPreviewLink(env: AppEnv, p: SimulatorPreviewRow, build: BuildRow, createdBy: string, scope: "named_users" | "project_members", title: string): Promise<string> {
   const id = newId(); const token = await derivePublicToken(env, id);
   await run(env.DB,
     `INSERT INTO distribution_links (id, organisation_id, project_id, build_id, created_by, token_hash, title, access_scope, expires_at, allow_download, allow_feedback, status, kind, created_at)
-     VALUES (?,?,?,?,?,?,?, 'project_members', ?, 0, 1, 'active', 'preview', ?)`,
-    id, p.organisation_id, p.project_id, build.id, createdBy, await hashToken(token), `Preview ${build.version ?? ""} (${build.build_number ?? "?"})`.trim(), p.expires_at, nowIso());
+     VALUES (?,?,?,?,?,?,?,?,?,0,1,'active','preview',?)`, id, p.organisation_id, p.project_id, build.id, createdBy, await hashToken(token), title, scope, p.expires_at, nowIso());
+  return id;
+}
+
+/** Who a preview is shared with. Shared people see it in their app under "Available builds" as an interactive preview. */
+export async function getPreviewSharing(env: AppEnv, actor: Actor, buildId: string) {
+  const { build } = await loadBuild(env, actor, buildId, "distribution:manage");
+  if (build.build_kind !== "simulator") throw notFound("Simulator preview");
+  const named = await managedLink(env, buildId, "named_users");
+  const shared = new Set((named ? await all<{ user_id: string }>(env.DB, "SELECT user_id FROM distribution_link_members WHERE distribution_link_id = ?", named.id) : []).map((r) => r.user_id));
+  const members = await all<{ user_id: string; display_name: string; email: string; role: string }>(env.DB,
+    "SELECT u.id AS user_id, u.display_name, u.email, pm.role FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? AND pm.status = 'active' AND u.status = 'active' ORDER BY u.display_name", build.project_id);
+  return { allMembers: !!(await managedLink(env, buildId, "project_members")), members: members.map((m) => ({ ...m, shared: shared.has(m.user_id) })) };
+}
+
+export async function setPreviewSharing(env: AppEnv, actor: Actor, buildId: string, input: { allMembers: boolean; userIds: string[] }, req?: Request) {
+  const { build, project } = await loadBuild(env, actor, buildId, "distribution:manage");
+  if (build.build_kind !== "simulator") throw notFound("Simulator preview");
+  const p = await loadPreview(env, buildId);
+  if (p.status !== "ready") throw new ApiError("INVALID_STATE", "The preview must be Ready before you can share it.");
+  const ids = [...new Set(input.userIds)];
+  if (ids.length) {
+    const ok = await all<{ user_id: string }>(env.DB, `SELECT user_id FROM project_members WHERE project_id = ? AND status = 'active' AND user_id IN (${ids.map(() => "?").join(",")})`, project.id, ...ids);
+    if (ok.length !== ids.length) throw new ApiError("VALIDATION_ERROR", "You can only share with active members of this project.");
+  }
+  const now = nowIso();
+  // selected members
+  const named = await managedLink(env, buildId, "named_users");
+  const before = new Set((named ? await all<{ user_id: string }>(env.DB, "SELECT user_id FROM distribution_link_members WHERE distribution_link_id = ?", named.id) : []).map((r) => r.user_id));
+  if (!ids.length && named) await run(env.DB, "UPDATE distribution_links SET status = 'revoked', revoked_at = ? WHERE id = ?", now, named.id);
+  if (ids.length) {
+    const linkId = named?.id ?? await insertPreviewLink(env, p, build, actor.userId, "named_users", NAMED_TITLE);
+    await batch(env.DB, [stmt(env.DB, "DELETE FROM distribution_link_members WHERE distribution_link_id = ?", linkId),
+      ...ids.map((u) => stmt(env.DB, "INSERT INTO distribution_link_members (id, distribution_link_id, user_id, created_at) VALUES (?,?,?,?)", newId(), linkId, u, now))]);
+  }
+  // everyone in the project
+  const all_ = await managedLink(env, buildId, "project_members");
+  if (input.allMembers && !all_) await insertPreviewLink(env, p, build, actor.userId, "project_members", ALL_TITLE);
+  if (!input.allMembers && all_) await run(env.DB, "UPDATE distribution_links SET status = 'revoked', revoked_at = ? WHERE id = ?", now, all_.id);
+
+  const added = ids.filter((u) => !before.has(u) && u !== actor.userId);
+  if (added.length) await notify(env, { userIds: added, organisationId: build.organisation_id, type: "build_published", title: `${build.app_name ?? project.name} ${build.version ?? ""} preview shared with you`.replace(/\s+/g, " "), body: "Open Available builds and tap Try in browser.", resourceType: "build", resourceId: build.id, path: "/portal/builds" });
+  await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "simulator_preview.shared", resourceType: "build", resourceId: buildId, metadata: { members: ids.length, allMembers: input.allMembers }, req });
+  return getPreviewSharing(env, actor, buildId);
 }
 
 /** Cron: start due uploads and recover ones that were interrupted. */

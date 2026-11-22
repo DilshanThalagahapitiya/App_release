@@ -15,6 +15,10 @@ import * as publish from "@/app/api/v1/builds/[buildId]/publish/route";
 import * as portalBuilds from "@/app/api/v1/portal/builds/route";
 import * as files from "@/app/api/v1/files/[token]/route";
 import * as settings from "@/app/api/v1/settings/route";
+import * as sharing from "@/app/api/v1/builds/[buildId]/preview/sharing/route";
+import * as invite from "@/app/api/v1/organisations/[organisationId]/invitations/route";
+import * as accept from "@/app/api/v1/auth/accept-invitation/route";
+import { cookieFrom } from "../helpers/harness";
 import * as pwAccess from "@/app/p/[token]/access/route";
 import { one, run } from "@/lib/db";
 import { resolveLink, submitLinkPassword } from "@/services/distribution";
@@ -295,18 +299,67 @@ describe("simulator preview: client access", () => {
     expect(calls[calls.length - 1].body).toMatchObject({ disabled: true });
   });
 
-  it("shows a Ready preview to project members (QA) in Available builds automatically, once per build, and hides it from other organisations", async () => {
-    const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Sim10"); const other = await S.tenant("Other10"); mockAppetize();
+  async function addTester(t: Tenant, email: string) {
+    const inv = await call(invite.POST, { cookie: t.adminCookie, params: { organisationId: t.orgId }, body: { email, role: "qa_tester", projectIds: [t.projectId] } });
+    const acc = await call(accept.POST, { body: { token: new URL(inv.data.inviteUrl).searchParams.get("token")!, displayName: email.split("@")[0], password: "tester-password-123" } });
+    const id = (await one<{ id: string }>(S_ENV.current!.DB, "SELECT id FROM users WHERE email = ?", email))!.id;
+    return { id, cookie: cookieFrom(acc) };
+  }
+  const S_ENV: { current: { DB: never } | null } = { current: null };
+
+  it("shares a preview only with the members you add; they see it in Available builds as an interactive preview", async () => {
+    const S = await createScenario(); S_ENV.current = S.env as never; S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Share1"); const other = await S.tenant("OtherShare"); mockAppetize();
+    const second = await addTester(t, "second@share1.test");
     const r = await uploadSim(S, t, simZip()); const buildId = r.b!.data.id as string;
-    expect((await call(portalBuilds.GET, { cookie: t.testerCookie })).data.length).toBe(0); // not Ready yet
+    const list = async (cookie: string) => (await call(portalBuilds.GET, { cookie })).data as { link_kind: string; path: string; build_number: string }[];
+
+    // not shareable until Ready, and nobody sees it by default
+    expect((await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [t.testerId] } })).status).toBe(409);
     await runPreviewUpload(S.env, await previewIdOf(S as never, buildId));
-    await call(links.POST, { cookie: t.adminCookie, params: { buildId }, body: linkBody() }); // staff add another link: still one row
-    const list = await call(portalBuilds.GET, { cookie: t.testerCookie });
-    expect(list.data.length).toBe(1); expect(list.data[0]).toMatchObject({ link_kind: "preview", version: "2.0.1", build_number: "42" }); expect(list.data[0].path).toMatch(/^\/p\//);
-    expect((await call(portalBuilds.GET, { cookie: other.testerCookie })).data.length).toBe(0);
-    // turning the preview off removes it from the QA list's usable state
+    expect((await list(t.testerCookie)).length).toBe(0); expect((await list(second.cookie)).length).toBe(0);
+    const state = (await call(sharing.GET, { cookie: t.adminCookie, params: { buildId } })).data;
+    expect(state.allMembers).toBe(false); expect(state.members.every((m: { shared: boolean }) => !m.shared)).toBe(true);
+    expect(state.members.map((m: { user_id: string }) => m.user_id)).toEqual(expect.arrayContaining([t.testerId, second.id]));
+
+    // add one member
+    const put = await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [t.testerId] } });
+    expect(put.status).toBe(200); expect(put.data.members.filter((m: { shared: boolean }) => m.shared).map((m: { user_id: string }) => m.user_id)).toEqual([t.testerId]);
+    const mine = await list(t.testerCookie);
+    expect(mine.length).toBe(1); expect(mine[0]).toMatchObject({ link_kind: "preview", build_number: "42" }); expect(mine[0].path).toMatch(/^\/p\//);
+    expect((await list(second.cookie)).length).toBe(0);                         // not added -> not shown
+    expect((await list(other.testerCookie)).length).toBe(0);                    // other organisation
+    expect((await one<{ n: number }>(S.env.DB, "SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND type = 'build_published'", t.testerId))!.n).toBe(1);
+    // the link itself enforces membership
+    const token = mine[0].path.split("/p/")[1];
+    expect((await resolveLink(S.env, new Request("https://portal.test/p/x", { headers: { cookie: second.cookie } }), token)).access).toBe("denied");
+    expect((await resolveLink(S.env, new Request("https://portal.test/p/x", { headers: { cookie: t.testerCookie } }), token)).access).toBe("granted");
+
+    // add the second, then everyone, then remove people
+    await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [t.testerId, second.id] } });
+    expect((await list(second.cookie)).length).toBe(1);
+    expect((await one<{ n: number }>(S.env.DB, "SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND type = 'build_published'", t.testerId))!.n).toBe(1); // no duplicate notification
+    await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [second.id] } });
+    expect((await list(t.testerCookie)).length).toBe(0); expect((await list(second.cookie)).length).toBe(1);
+    await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: true, userIds: [] } });
+    expect((await list(t.testerCookie)).length).toBe(1); expect((await list(second.cookie)).length).toBe(1);
+    await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [] } });
+    expect((await list(t.testerCookie)).length).toBe(0); expect((await list(second.cookie)).length).toBe(0);
+    // turning the preview off also stops it
+    await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [t.testerId] } });
     await call(previewRoute.PATCH, { cookie: t.adminCookie, method: "PATCH", params: { buildId }, body: { enabled: false } });
     expect(await previewPublicView(S.env, buildId)).toMatchObject({ available: false });
+  });
+
+  it("only lets managers share, and only with real members of this project", async () => {
+    const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Share2"); const other = await S.tenant("OtherShare2"); mockAppetize();
+    const buildId = await readyBuild(S, t);
+    const body = { allMembers: false, userIds: [t.testerId] };
+    expect((await call(sharing.PUT, { cookie: t.testerCookie, method: "PUT", params: { buildId }, body })).status).toBeGreaterThanOrEqual(403);
+    expect((await call(sharing.GET, { cookie: t.testerCookie, params: { buildId } })).status).toBeGreaterThanOrEqual(403);
+    expect((await call(sharing.PUT, { cookie: other.adminCookie, method: "PUT", params: { buildId }, body })).status).toBe(404);
+    expect((await call(sharing.PUT, { params: { buildId }, method: "PUT", body })).status).toBe(401);
+    const outsider = await call(sharing.PUT, { cookie: t.adminCookie, method: "PUT", params: { buildId }, body: { allMembers: false, userIds: [other.testerId] } });
+    expect(outsider.status).toBe(422);
   });
 
   it("blocks unauthorised users from uploading, managing or reading another project's previews", async () => {

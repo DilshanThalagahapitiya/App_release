@@ -11,6 +11,34 @@ import type { BuildDetail } from "../layout";
 export interface PreviewDto { id: string; build_id: string; status: string; enabled: boolean; status_detail: string | null; error_code: string | null; attempts: number; file_type: string; mode: string; device: string; os_version: string | null; os_options?: number[]; expires_at: string | null; uploaded_at: string | null; ready_at: string | null; appetize_configured: boolean; embed_url?: string; open_url?: string; display?: "embed" | "link" }
 interface HistoryItem extends PreviewDto { version: string | null; build_number: string | null; app_name: string | null; release_title: string | null; uploader: string | null }
 
+interface Sharing { allMembers: boolean; members: { user_id: string; display_name: string; email: string; role: string; shared: boolean }[] }
+
+/** Choose who sees the preview in their app (Available builds). */
+function ShareCard({ buildId, ready }: { buildId: string; ready: boolean }) {
+  const q = useApi<Sharing>(["pv-share", buildId], ready ? `/builds/${buildId}/preview/sharing` : null);
+  const [sel, setSel] = React.useState<Set<string> | null>(null); const [all, setAll] = React.useState(false); const [find, setFind] = React.useState("");
+  React.useEffect(() => { if (q.data && sel === null) { setSel(new Set(q.data.members.filter((m) => m.shared).map((m) => m.user_id))); setAll(q.data.allMembers); } }, [q.data, sel]);
+  const save = useAct(() => apiFetch<Sharing>(`/builds/${buildId}/preview/sharing`, { method: "PUT", body: { allMembers: all, userIds: [...(sel ?? [])] } }), { ok: "Sharing saved", invalidate: [["pv-share", buildId], ["links", buildId]] });
+  const members = (q.data?.members ?? []).filter((m) => `${m.display_name} ${m.email}`.toLowerCase().includes(find.trim().toLowerCase()));
+  const toggle = (id: string) => setSel((cur) => { const n = new Set(cur ?? []); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  return (
+    <Card title="Share with members" actions={<Button size="sm" variant="primary" loading={save.isPending} disabled={!ready || !sel} why="The preview must be Ready first" onClick={() => save.mutate()}>Save</Button>}>
+      <p className="text-[13px] text-[var(--text-2)]">People you add see this preview in their app under <b>Available builds</b>, marked as an interactive preview, and get a notification.</p>
+      {!ready ? <p className="mt-3 text-[13px] muted">Available once the preview is Ready.</p> : !q.data || !sel ? <div className="skeleton mt-3 h-24" /> : (
+        <div className="mt-3 space-y-3">
+          <label className="flex items-center gap-2 text-[14px] font-medium"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />Everyone in this project ({q.data.members.length})</label>
+          {!all && <>
+            {q.data.members.length > 6 && <Input aria-label="Search members" placeholder="Search members…" value={find} onChange={(e) => setFind(e.target.value)} />}
+            <ul className="max-h-64 divide-y divide-[var(--border)] overflow-auto rounded-lg border border-[var(--border)]">
+              {members.map((m) => (<li key={m.user_id}><label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[14px]"><input type="checkbox" checked={sel.has(m.user_id)} onChange={() => toggle(m.user_id)} /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{m.display_name}</span><span className="block truncate text-xs muted">{m.email} · {m.role.replace(/_/g, " ")}</span></span></label></li>))}
+              {!members.length && <li className="px-3 py-4 text-center text-[13px] muted">{q.data.members.length ? "No match." : "This project has no members yet. Add members on the project's Members tab."}</li>}
+            </ul>
+            <p className="text-xs muted">{sel.size} selected{sel.size ? "" : ". Nobody sees it in their app yet"}</p></>}
+        </div>)}
+    </Card>
+  );
+}
+
 export default function BuildPreviewTab() {
   const { buildId } = useParams<{ buildId: string }>();
   const b = useApi<BuildDetail>(["build", buildId], `/builds/${buildId}`);
@@ -64,6 +92,8 @@ export default function BuildPreviewTab() {
         </Card>
 
         {show && ready && p.display !== "link" && p.embed_url && <Card title="Simulator"><PreviewEmbed src={p.embed_url} appName={b.data?.app_name ?? "App"} /></Card>}
+
+        <ShareCard buildId={buildId} ready={ready} />
 
         <Card title="Client preview links" actions={<Button size="sm" variant="primary" disabled={!canCreate} why="The preview must be Ready first" onClick={() => setOpen(true)}>Create client preview link</Button>}>
           {previewLinks.length ? <div className="space-y-3">{previewLinks.map((l) => <DistributionLinkCard key={l.id} l={l} onRevoke={() => setRev(l)} />)}</div>
