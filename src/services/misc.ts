@@ -68,10 +68,16 @@ export async function markAllRead(env: AppEnv, actor: Actor) {
   await run(env.DB, "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL", nowIso(), actor.userId);
   return { read: true };
 }
+/** Notification preferences are an administrator control: Platform Owner or an organisation admin. */
+export async function canManagePreferences(env: AppEnv, actor: Actor): Promise<boolean> {
+  if (actor.isPlatformOwner) return true;
+  return !!(await one(env.DB, "SELECT 1 AS ok FROM organisation_members WHERE user_id = ? AND status = 'active' AND role = 'org_admin' LIMIT 1", actor.userId));
+}
 export async function getPreferences(env: AppEnv, actor: Actor) {
   return all(env.DB, "SELECT event_type, in_app_enabled, email_enabled FROM notification_preferences WHERE user_id = ?", actor.userId);
 }
 export async function setPreference(env: AppEnv, actor: Actor, eventType: string, inApp: boolean, email: boolean) {
+  if (!(await canManagePreferences(env, actor))) throw forbidden("Only administrators can change notification preferences.");
   await run(env.DB, "INSERT INTO notification_preferences (id, user_id, event_type, in_app_enabled, email_enabled, updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id, event_type) DO UPDATE SET in_app_enabled = excluded.in_app_enabled, email_enabled = excluded.email_enabled, updated_at = excluded.updated_at",
     newId(), actor.userId, eventType, inApp ? 1 : 0, email ? 1 : 0, nowIso());
   return { eventType, inApp, email };
@@ -179,7 +185,7 @@ export async function health(env: AppEnv, detailed: boolean) {
 }
 
 export async function portalDownloads(env: AppEnv, actor: Actor) {
-  return all(env.DB, `SELECT d.id, d.event_type, d.created_at, b.version, b.build_number, b.app_name, p.name AS project_name
+  return all(env.DB, `SELECT d.id, d.event_type, d.created_at, d.build_id, b.version, b.build_number, b.app_name, b.release_title, p.name AS project_name
     FROM downloads d JOIN builds b ON b.id = d.build_id JOIN projects p ON p.id = b.project_id
-    WHERE d.user_id = ? AND d.event_type IN ('manifest_requested','download_started','install_confirmed') ORDER BY d.created_at DESC LIMIT 50`, actor.userId);
+    WHERE d.user_id = ? AND d.event_type IN ('manifest_requested','download_started','install_confirmed') ORDER BY d.created_at DESC LIMIT 300`, actor.userId);
 }

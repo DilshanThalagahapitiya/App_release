@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Bell, Box, ChevronsLeft, ChevronsRight, FolderKanban, Gauge, LogOut, Menu, Moon, Package, ScrollText, Server, Settings, Share2, Sun, MessageSquare, Users, Building2, Download, UserCircle, X } from "lucide-react";
+import { Bell, Box, ChevronsLeft, ChevronsRight, FolderKanban, Gauge, LogOut, Menu, Moon, Package, ScrollText, Server, Settings, Share2, Sun, MessageSquare, Users, Building2, History, UserCircle, X } from "lucide-react";
 import { apiFetch, ago } from "@/lib/client";
 import { Button, cx, StatusBadge } from "./ui";
 import { Brand } from "./brand";
@@ -20,7 +20,7 @@ const ADMIN: Item[] = [
 ];
 const CUSTOMER: Item[] = [
   { href: "/portal", label: "My Projects", icon: FolderKanban }, { href: "/portal/builds", label: "Available Builds", icon: Package },
-  { href: "/portal/downloads", label: "Downloads", icon: Download }, { href: "/portal/feedback", label: "QA Feedback", icon: MessageSquare },
+  { href: "/portal/downloads", label: "History", icon: History }, { href: "/portal/feedback", label: "QA Feedback", icon: MessageSquare },
   { href: "/portal/notifications", label: "Notifications", icon: Bell }, { href: "/portal/profile", label: "Profile / Account", icon: UserCircle },
 ];
 
