@@ -22,7 +22,7 @@
 html { background: var(--bg); }
 body { background: var(--bg); color: var(--text); font-family: ui-sans-serif, -apple-system, "Inter", "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-a { color: var(--accent); }
+@layer base { a { color: var(--accent); } }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
 .muted { color: var(--text-3); }
 .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2)); background-size: 200% 100%; animation: sk 1.4s infinite; border-radius: 8px; }
@@ -32,3 +32,18 @@ a { color: var(--accent); }
 .auth-bg { background: radial-gradient(60% 50% at 18% 78%, rgba(150,140,245,.22), transparent 70%), radial-gradient(55% 45% at 70% 30%, rgba(120,180,255,.25), transparent 70%), linear-gradient(180deg, #f4f8ff, #ffffff); }
 :root[data-theme="dark"] .auth-bg { background: radial-gradient(60% 50% at 18% 78%, rgba(120,110,230,.18), transparent 70%), radial-gradient(55% 45% at 70% 30%, rgba(60,120,220,.2), transparent 70%), #0e1116; }
 .bar-accent { border-bottom: 3px solid var(--accent); }
+
+/* Mobile / tablet (iPhone, iPad): app-like behaviour */
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+@media (max-width: 1023px) {
+  /* 16px inputs stop iOS from zooming the page when a field gets focus */
+  input, select, textarea { font-size: 16px !important; }
+  button, a, select { -webkit-touch-callout: none; }
+  body { -webkit-user-select: none; user-select: none; }
+  input, textarea { -webkit-user-select: text; user-select: text; }
+}
+.safe-b { padding-bottom: env(safe-area-inset-bottom); }
+.safe-t { padding-top: env(safe-area-inset-top); }
+
+/* Grid items may shrink below their content width (stops wide tables from stretching the page on phones) */
+.grid > * { min-width: 0; }

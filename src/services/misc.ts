@@ -132,7 +132,7 @@ export async function overview(env: AppEnv, actor: Actor) {
   const adminOrgIds = actor.isPlatformOwner ? await orgIdsForActor(env, actor) : (await all<{ organisation_id: string }>(env.DB, "SELECT organisation_id FROM organisation_members WHERE user_id = ? AND status = 'active' AND role = 'org_admin'", actor.userId)).map((r) => r.organisation_id);
   const recentActivity = adminOrgIds.length ? await all(env.DB, `SELECT a.id, a.action, a.resource_type, a.resource_id, a.created_at, u.display_name AS actor_name FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id
     WHERE a.organisation_id IN (${placeholders(adminOrgIds.length)}) ORDER BY a.created_at DESC LIMIT 8`, ...adminOrgIds) : [];
-  return { empty: false, totals: t, downloadsByDay, feedbackBySeverity, buildsByEligibility, recentDownloads, recentActivity, processing: actor.isPlatformOwner ? await processingStats(env) : null };
+  return { empty: false, totals: t, downloadsByDay, feedbackBySeverity, buildsByEligibility, recentDownloads, recentActivity, processing: actor.isPlatformOwner ? await processingStats(env) : null, validationMode: (await getSettings(env)).validationMode };
 }
 
 // ------------------------------------------------------------ customer portal

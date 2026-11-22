@@ -40,36 +40,55 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
       {items.map((i) => (
         <a key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined} title={collapsed ? i.label : undefined}
           className={cx("flex items-center gap-3 px-3.5 py-2.5 text-[14px] font-medium", active(i.href) ? "border-l-[3px] border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-l-[3px] border-transparent text-[var(--text)] hover:bg-[var(--surface-2)]")} style={{ textDecoration: "none" }}>
-          <i.icon className="h-4 w-4 shrink-0" /><span className={cx(collapsed && "md:sr-only")}>{i.label}</span>
+          <i.icon className="h-4 w-4 shrink-0" /><span className={cx(collapsed && "lg:sr-only")}>{i.label}</span>
         </a>))}
     </nav>
   );
   return (
-    <div className="min-h-screen md:flex">
+    <div className="min-h-screen lg:flex">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-[var(--surface)] focus:p-2">Skip to content</a>
-      <aside className={cx("sticky top-0 hidden h-screen shrink-0 flex-col bar-accent border-r border-[var(--border)] bg-[var(--surface)] md:flex", collapsed ? "w-14" : "w-60")}>
+      <aside className={cx("sticky top-0 hidden h-screen shrink-0 flex-col bar-accent border-r border-[var(--border)] bg-[var(--surface)] lg:flex", collapsed ? "w-14" : "w-60")}>
         <div className="flex h-16 items-center px-3.5">{collapsed ? <Box className="h-5 w-5 text-[var(--accent)]" /> : <Brand />}</div>
         <div className="flex-1 overflow-y-auto">{nav}</div>
         <button onClick={() => { setCollapsed(!collapsed); try { localStorage.setItem("nav", collapsed ? "0" : "1"); } catch { /* ignore */ } }} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="m-2 flex items-center justify-center rounded-lg p-2 text-[var(--text-3)] hover:bg-[var(--surface-2)]">{collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}</button>
       </aside>
       {mobile && (
-        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobile(false)} />
           <div className="absolute left-0 top-0 h-full w-72 bg-[var(--surface)] shadow-xl"><div className="flex h-14 items-center justify-between border-b border-[var(--border)] px-4"><Brand /><button aria-label="Close menu" onClick={() => setMobile(false)}><X className="h-5 w-5" /></button></div>{nav}</div>
         </div>)}
       <div className="min-w-0 flex-1">
-        <header className="bar-accent sticky top-0 z-30 flex h-14 items-center justify-between gap-3 bg-[var(--surface)]/95 px-4 shadow-[var(--shadow)] backdrop-blur">
+        <header className="bar-accent safe-t sticky top-0 z-30 flex min-h-14 items-center justify-between gap-3 bg-[var(--surface)]/95 px-4 shadow-[var(--shadow)] backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
-            <button className="md:hidden" aria-label="Open menu" onClick={() => setMobile(true)}><Menu className="h-5 w-5" /></button>
-            <span className="truncate text-[13px] text-[var(--text-2)]">{me.isPlatformOwner ? "Platform Owner" : me.memberships.map((m) => m.name).join(", ") || "No organisation"}</span>
+            <span className="lg:hidden"><Brand subtitle={false} /></span>
+            <span className="hidden truncate text-[13px] text-[var(--text-2)] lg:inline">{me.isPlatformOwner ? "Platform Owner" : me.memberships.map((m) => m.name).join(", ") || "No organisation"}</span>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle /><NotificationMenu area={area} unread={me.unreadNotifications} /><UserMenu me={me} />
           </div>
         </header>
-        <main id="main" className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+        <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 lg:pb-6 lg:pt-6">{children}</main>
       </div>
+      <TabBar items={items} active={active} onMore={() => setMobile(true)} moreOpen={mobile} />
     </div>
+  );
+}
+
+/** Bottom tab bar for phones and iPad portrait (hidden on wide screens, where the sidebar is shown). */
+function TabBar({ items, active, onMore, moreOpen }: { items: Item[]; active: (h: string) => boolean; onMore: () => void; moreOpen: boolean }) {
+  const main = items.filter((i) => !["/app/organisations", "/app/members", "/app/audit-logs", "/app/workers", "/app/settings", "/app/notifications", "/portal/profile", "/portal/notifications", "/app/distribution"].includes(i.href)).slice(0, 4);
+  const moreActive = !moreOpen && !main.some((i) => active(i.href)) && items.some((i) => active(i.href));
+  const tab = "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium";
+  return (
+    <nav aria-label="Tabs" className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur lg:hidden">
+      <div className="mx-auto flex max-w-xl">
+        {main.map((i) => (
+          <a key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined} className={cx(tab, active(i.href) ? "text-[var(--accent)]" : "text-[var(--text-3)]")} style={{ textDecoration: "none" }}>
+            <i.icon className="h-6 w-6" /><span className="max-w-full truncate px-1">{i.label.split(" / ")[0].replace("QA ", "")}</span>
+          </a>))}
+        <button type="button" onClick={onMore} aria-label="More" className={cx(tab, moreActive || moreOpen ? "text-[var(--accent)]" : "text-[var(--text-3)]")}><Menu className="h-6 w-6" /><span>More</span></button>
+      </div>
+    </nav>
   );
 }
 
