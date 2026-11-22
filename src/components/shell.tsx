@@ -75,7 +75,7 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
 
 function ThemeToggle() {
   const [dark, setDark] = React.useState(false);
-  React.useEffect(() => { setDark(document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches)); }, []);
+  React.useEffect(() => { setDark(document.documentElement.dataset.theme === "dark"); }, []);
   return <Button variant="ghost" size="sm" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={() => { setTheme(dark ? "light" : "dark"); setDark(!dark); }}>{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</Button>;
 }
 

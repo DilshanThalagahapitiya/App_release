@@ -31,7 +31,7 @@ function Form() {
       try { const me = await apiFetch<{ portal: string }>("/auth/login", { body: { ...v, turnstileToken: tokenRef.current || undefined } }); const next = params.get("next"); location.href = next && /^\/d\/[A-Za-z0-9_-]+$/.test(next) ? next : me.portal === "admin" ? "/app" : "/portal"; }
       catch (e) { setError((e as Error).message); }
     })}>
-      <div><h1 className="text-xl font-semibold">Log in to Your Account</h1><p className="mt-1 text-[13px] text-[var(--text-3)]">Crede App Release Portal</p></div>
+      <div><h1 className="text-xl font-semibold">Log in to Your Account</h1><p className="mt-1 text-[13px] text-[var(--text-3)]">Crede App Release Portal</p><p className="mt-3 text-[14px] text-[var(--text-2)]">Welcome back. Sign in to download test builds, install apps and share feedback.</p></div>
       <hr className="border-[var(--border)]" />
       {params.get("expired") && <Callout tone="warn" title="Session expired">Please sign in again to continue.</Callout>}
       {error && <Callout tone="bad">{error}</Callout>}
@@ -54,7 +54,8 @@ function Form() {
       <Button type="submit" variant="secondary" loading={isSubmitting} className="!h-11 w-full !border-2 !border-[var(--accent)] !text-[16px] !font-semibold !text-[var(--accent)]">Login</Button>
       <p className="text-center text-[14px]"><a href="/auth/forgot-password">Forgot Password</a></p>
       <hr className="border-[var(--border)]" />
-      <p className="text-center text-xs text-[var(--text-3)]">Crede Technologies Inc. © 2010 - 2026</p>
+      <p className="text-center text-[13px] text-[var(--text-2)]">New here? Access is by invitation only. Please contact your Crede Technologies administrator to be invited.</p>
+      <p className="text-center text-xs text-[var(--text-3)]">Secure, private distribution of iOS test builds.</p>
     </form>
   );
 }
