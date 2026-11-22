@@ -55,9 +55,13 @@
 	"env": {
 		"production": {
 			"name": "ipa-platform-prod",
+			"preview_urls": false,
 			"vars": {
-				"APP_URL": "https://REPLACE-WITH-YOUR-DOMAIN",
-				"ENVIRONMENT": "production"
+				"APP_URL": "https://ipa-platform-prod.myerplk.workers.dev",
+				"ENVIRONMENT": "production",
+					"STORAGE_S3_ENDPOINT": "https://cpxvhwvuvoukbixfnerx.storage.supabase.co/storage/v1/s3",
+					"STORAGE_S3_REGION": "ap-northeast-1",
+					"STORAGE_S3_BUCKET": "ipa-builds"
 			},
 			"d1_databases": [
 				{
@@ -65,12 +69,6 @@
 					"database_name": "ipa-platform-prod",
 					"database_id": "97d4e150-b455-4929-98e5-dbb35567198c",
 					"migrations_dir": "migrations"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "BUCKET",
-					"bucket_name": "ipa-platform-prod"
 				}
 			],
 			"queues": {

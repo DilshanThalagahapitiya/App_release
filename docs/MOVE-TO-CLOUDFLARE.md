@@ -2,6 +2,8 @@
 
 Goal: the platform runs on Cloudflare 24/7 with a **permanent HTTPS address**. No tunnel, and your Mac does not need to stay on for clients to install. Only the validation worker keeps running on your Mac.
 
+> **No card? Use [DEPLOY-SUPABASE.md](DEPLOY-SUPABASE.md) instead**: it stores files in Supabase and skips R2.
+>
 > Allow about 30–45 minutes. The commands below are in the order you run them. Run them in the project folder (`App_release`), not in `worker/`.
 
 ---
@@ -11,7 +13,7 @@ Goal: the platform runs on Cloudflare 24/7 with a **permanent HTTPS address**. N
 | Topic | What you need to know |
 |---|---|
 | **R2 needs a payment method** | File storage (R2) cannot be switched on without a card on the Cloudflare account. Everything else (Workers, D1, Queues, Cron) works on the free plan. **If you cannot add a card, stop here:** the app needs a code change to store files somewhere else (for example Supabase Storage). Ask Claude to build that first. |
-| **Free Workers plan may be too small** | The app bundle is about 5 MB compressed. The free plan limit is 3 MB, and logins use a heavy password hash that can exceed the free CPU limit. The **Workers Paid plan ($5 a month)** is recommended. Try the free plan first. If the deploy says "script too large", upgrade. |
+| **Free Workers plan may be too small** | The app bundle is about 1.6 MB compressed, which fits the free 3 MB limit. Logins use a heavy password hash that can exceed the free CPU limit. If sign-in fails with a "CPU time" error, the **Workers Paid plan ($5 a month)** fixes it. Try the free plan first. |
 | **Your data does not move automatically** | The local database and uploaded IPAs stay on your Mac. On Cloudflare you start clean: new owner login, new projects, and you upload IPAs again. |
 | **Old links stop working** | Tunnel links, install links and UDID request links all die when you switch. Create them again on the new address. |
 | **UDID profile** | Cloudflare gives a trusted HTTPS certificate, so iOS accepts it exactly as before. The profile still shows "Not Signed", which is normal. |

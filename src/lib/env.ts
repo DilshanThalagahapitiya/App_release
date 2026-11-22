@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { S3Bucket } from "./s3-bucket";
 
 export type NotifyMessage = { type: "email"; outboxId: string };
 
@@ -17,6 +18,12 @@ export interface AppEnv {
   EMAIL_FROM_ADDRESS?: string;
   EMAIL_FROM_NAME?: string;
   EMAIL_API_KEY?: string;
+  /** Optional S3-compatible storage (e.g. Supabase Storage). When set it is used instead of the R2 binding. */
+  STORAGE_S3_ENDPOINT?: string;
+  STORAGE_S3_REGION?: string;
+  STORAGE_S3_BUCKET?: string;
+  STORAGE_S3_ACCESS_KEY_ID?: string;
+  STORAGE_S3_SECRET_ACCESS_KEY?: string;
 }
 
 let testEnv: AppEnv | null = null;
@@ -25,10 +32,23 @@ export function __setTestEnv(env: AppEnv | null) {
   testEnv = env;
 }
 
+const withStorage = new WeakMap<object, AppEnv>();
+
+/** Use S3-compatible storage (Supabase) when configured; otherwise the Cloudflare R2 binding. */
+export function resolveStorage(env: AppEnv): AppEnv {
+  const { STORAGE_S3_ENDPOINT: endpoint, STORAGE_S3_BUCKET: bucket, STORAGE_S3_ACCESS_KEY_ID: accessKeyId, STORAGE_S3_SECRET_ACCESS_KEY: secretAccessKey } = env;
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return env;
+  const cached = withStorage.get(env);
+  if (cached) return cached;
+  const next = { ...env, BUCKET: new S3Bucket({ endpoint, bucket, accessKeyId, secretAccessKey, region: env.STORAGE_S3_REGION || "us-east-1" }) as unknown as R2Bucket } as AppEnv;
+  withStorage.set(env, next);
+  return next;
+}
+
 export async function getEnv(): Promise<AppEnv> {
   if (testEnv) return testEnv;
   const ctx = await getCloudflareContext({ async: true });
-  return ctx.env as unknown as AppEnv;
+  return resolveStorage(ctx.env as unknown as AppEnv);
 }
 
 export function isSecure(env: AppEnv): boolean {
