@@ -67,10 +67,27 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
             <ThemeToggle /><NotificationMenu area={area} unread={me.unreadNotifications} /><UserMenu me={me} />
           </div>
         </header>
-        <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 lg:pb-6 lg:pt-6">{children}</main>
+        <TopTabs items={items} active={active} onMore={() => setMobile(true)} />
+        <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 md:pb-6 md:pt-5 lg:pt-6">{children}</main>
       </div>
       <TabBar items={items} active={active} onMore={() => setMobile(true)} moreOpen={mobile} />
     </div>
+  );
+}
+
+/** iPad (portrait / split view): tab bar across the top, under the title bar. */
+function TopTabs({ items, active, onMore }: { items: Item[]; active: (h: string) => boolean; onMore: () => void }) {
+  const main = items.filter((i) => !["/app/organisations", "/app/members", "/app/audit-logs", "/app/workers", "/app/settings", "/app/notifications", "/portal/profile", "/portal/notifications", "/app/distribution"].includes(i.href)).slice(0, 4);
+  return (
+    <nav aria-label="Sections" className="sticky top-14 z-20 hidden border-b border-[var(--border)] bg-[var(--surface)]/95 px-4 backdrop-blur md:block lg:hidden">
+      <div className="mx-auto flex max-w-3xl gap-1 py-2">
+        {main.map((i) => (
+          <a key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined} className={cx("flex flex-1 items-center justify-center gap-2 rounded-xl py-2 text-[15px] font-medium", active(i.href) ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "text-[var(--text-2)]")} style={{ textDecoration: "none" }}>
+            <i.icon className="h-5 w-5" />{i.label.split(" / ")[0].replace("QA ", "")}
+          </a>))}
+        <button type="button" onClick={onMore} className="flex flex-1 items-center justify-center gap-2 rounded-xl py-2 text-[15px] font-medium text-[var(--text-2)]"><Menu className="h-5 w-5" />More</button>
+      </div>
+    </nav>
   );
 }
 
@@ -80,7 +97,7 @@ function TabBar({ items, active, onMore, moreOpen }: { items: Item[]; active: (h
   const moreActive = !moreOpen && !main.some((i) => active(i.href)) && items.some((i) => active(i.href));
   const tab = "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium";
   return (
-    <nav aria-label="Tabs" className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur lg:hidden">
+    <nav aria-label="Tabs" className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur md:hidden">
       <div className="mx-auto flex max-w-xl">
         {main.map((i) => (
           <a key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined} className={cx(tab, active(i.href) ? "text-[var(--accent)]" : "text-[var(--text-3)]")} style={{ textDecoration: "none" }}>

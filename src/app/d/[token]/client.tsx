@@ -6,7 +6,7 @@ export function PublicActions({ kind, installHref, token }: { kind: "ota" | "dow
   const [err, setErr] = React.useState("");
   return (
     <div className="space-y-3">
-      <a href={installHref} onClick={() => setState("started")} className="block rounded-xl bg-[var(--accent)] px-4 py-3 text-center text-base font-semibold" style={{ color: "var(--accent-text)", textDecoration: "none" }}>{kind === "ota" ? "Install" : "Download IPA"}</a>
+      <a href={installHref} onClick={() => setState("started")} className="block rounded-2xl bg-[var(--accent)] px-4 py-4 text-center text-[19px] font-semibold shadow-sm active:opacity-80" style={{ color: "var(--accent-text)", textDecoration: "none" }}>{kind === "ota" ? "Install" : "Download IPA"}</a>
       {state !== "idle" && (
         <div className="rounded-lg bg-[var(--surface-2)] px-3 py-2.5 text-[13px]" role="status">
           {state === "started" ? (<><p>{kind === "ota" ? "iOS will ask for permission to install. If nothing happens, this build may not be provisioned for your device." : "Your download has started."} We can&apos;t see whether installation succeeds.</p>
