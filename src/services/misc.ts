@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit";
 import { processingStats } from "./worker";
 import { linkState } from "@/lib/rules";
 import { getSettings } from "@/lib/settings";
+import type { BuildRow, ProjectRow } from "@/lib/types";
 
 // ------------------------------------------------------------ session / profile
 
@@ -141,16 +142,29 @@ export async function portalBuilds(env: AppEnv, actor: Actor) {
   const projects = (await accessibleProjects(env, actor)).filter((p) => can(p.role, "build:view"));
   if (!projects.length) return [];
   const ids = projects.map((p) => p.id);
+  // Every published build in the user's projects must appear (backfills builds published before this existed).
+  const missing = await all<BuildRow & { pid: string }>(env.DB,
+    `SELECT b.*, b.project_id AS pid FROM builds b JOIN projects p ON p.id = b.project_id AND p.status = 'active'
+      WHERE b.project_id IN (${placeholders(ids.length)}) AND b.deleted_at IS NULL AND b.publish_status = 'published'
+        AND NOT EXISTS (SELECT 1 FROM distribution_links l WHERE l.build_id = b.id AND l.access_scope = 'project_members' AND l.status = 'active' AND (l.expires_at IS NULL OR l.expires_at > ?))
+      LIMIT 25`, ...ids, nowIso());
+  if (missing.length) {
+    const { ensureMemberLink } = await import("./distribution");
+    for (const b of missing) { const proj = await one<ProjectRow>(env.DB, "SELECT * FROM projects WHERE id = ?", b.project_id); if (proj) await ensureMemberLink(env, b, proj); }
+  }
   const rows = await all<{ link_id: string; link_status: string; expires_at: string | null; max_downloads: number | null; download_count: number; access_scope: string; project_id: string; project_name: string; build_id: string; app_name: string | null; version: string | null; build_number: string | null; eligibility_status: string; published_at: string | null; release_title: string | null; allow_feedback: number }>(env.DB,
     `SELECT l.id AS link_id, l.status AS link_status, l.expires_at, l.max_downloads, l.download_count, l.access_scope, l.allow_feedback, p.id AS project_id, p.name AS project_name, b.id AS build_id, b.app_name, b.version, b.build_number, b.eligibility_status, b.published_at, b.release_title
        FROM distribution_links l JOIN builds b ON b.id = l.build_id AND b.deleted_at IS NULL AND b.publish_status = 'published' JOIN projects p ON p.id = l.project_id AND p.status = 'active'
       WHERE l.project_id IN (${placeholders(ids.length)}) AND l.status = 'active' AND l.access_scope IN ('project_members','named_users')
         AND (l.access_scope = 'project_members' OR EXISTS (SELECT 1 FROM distribution_link_members m WHERE m.distribution_link_id = l.id AND m.user_id = ?))
-      ORDER BY b.published_at DESC`, ...ids, actor.userId);
+      ORDER BY b.published_at DESC, CAST(b.build_number AS INTEGER) DESC, l.created_at DESC`, ...ids, actor.userId);
   const { derivePublicToken } = await import("./distribution");
   const out = [];
+  const seen = new Set<string>(); // one row per build, even when several links point at it
   for (const r of rows) {
+    if (seen.has(r.build_id)) continue;
     if (linkState({ status: r.link_status, expires_at: r.expires_at, max_downloads: r.max_downloads, download_count: r.download_count }) !== "active") continue;
+    seen.add(r.build_id);
     out.push({ ...r, path: `/d/${await derivePublicToken(env, r.link_id)}` });
   }
   return out;

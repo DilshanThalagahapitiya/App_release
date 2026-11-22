@@ -317,6 +317,7 @@ export async function publishBuild(env: AppEnv, actor: Actor, buildId: string, r
       throw new ApiError("INVALID_STATE", "This build is not eligible for installation. Enable download-only access explicitly to publish it anyway.");
   }
   await run(env.DB, "UPDATE builds SET publish_status = 'published', published_at = ?, updated_at = ? WHERE id = ?", nowIso(), nowIso(), buildId);
+  await (await import("@/services/distribution")).ensureMemberLink(env, { ...build, publish_status: "published" }, project);
   await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "build.published", resourceType: "build", resourceId: buildId, req });
   await notify(env, { userIds: (await projectMemberIds(env, project.id)).filter((u) => u !== actor.userId), organisationId: project.organisation_id, type: "build_published", title: `${project.name} ${build.version ?? ""} is available`.trim(), resourceType: "build", resourceId: buildId, path: `/portal/builds` });
   return getBuild(env, actor, buildId);

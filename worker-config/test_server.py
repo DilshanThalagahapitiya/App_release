@@ -38,3 +38,31 @@ class T(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Store(unittest.TestCase):
+    def setUp(self):
+        server.STORE_FILE = Path(tempfile.mkdtemp()) / "keys.json"
+
+    def test_remember_forget_and_privacy(self):
+        server.remember("https://a.example", "wkr_" + "a" * 30)
+        server.remember("https://b.example", "wkr_" + "b" * 30)
+        server.remember("https://a.example", "wkr_" + "c" * 30)  # newer key for A replaces A only
+        st = server.load_store()
+        self.assertEqual(st["https://a.example"]["key"], "wkr_" + "c" * 30)
+        self.assertEqual(st["https://b.example"]["key"], "wkr_" + "b" * 30)
+        self.assertEqual(oct(server.STORE_FILE.stat().st_mode & 0o777), "0o600")
+        self.assertTrue(server.forget("https://b.example")); self.assertFalse(server.forget("https://b.example"))
+        self.assertNotIn("https://b.example", server.load_store())
+
+    def test_status_never_returns_the_full_key(self):
+        server.ENV_FILE = Path(tempfile.mkdtemp()) / ".env"
+        server.write_env({"PLATFORM_URL": "https://a.example", "WORKER_TOKEN": "wkr_" + "z" * 40})
+        s = server.status()
+        self.assertNotIn("z" * 20, json_dump(s)); self.assertTrue(s["saved"][0]["active"])
+        self.assertIn("https://a.example", server.load_store())
+
+
+def json_dump(o):
+    import json
+    return json.dumps(o)

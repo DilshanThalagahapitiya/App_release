@@ -68,6 +68,27 @@ export async function createLink(env: AppEnv, actor: Actor, buildId: string, inp
   return linkDto(env, (await one<LinkRow>(env.DB, "SELECT * FROM distribution_links WHERE id = ?", id))!, { withUrl: true });
 }
 
+/**
+ * Published builds are already visible to the project's members, so each one gets a standard "project members" link
+ * (used by the Available builds screen). Idempotent; created by the system on behalf of the uploader.
+ */
+export async function ensureMemberLink(env: AppEnv, build: BuildRow, project: ProjectRow): Promise<void> {
+  const now = nowIso();
+  const has = await one(env.DB, "SELECT id FROM distribution_links WHERE build_id = ? AND access_scope = 'project_members' AND status = 'active' AND (expires_at IS NULL OR expires_at > ?) LIMIT 1", build.id, now);
+  if (has) return;
+  const org = await one<{ default_link_expiry_days: number }>(env.DB, "SELECT default_link_expiry_days FROM organisations WHERE id = ?", project.organisation_id);
+  const settings = await getSettings(env);
+  const id = newId();
+  const token = await derivePublicToken(env, id);
+  const createdBy = build.uploaded_by ?? (await one<{ user_id: string }>(env.DB, "SELECT user_id FROM organisation_members WHERE organisation_id = ? AND role = 'org_admin' LIMIT 1", project.organisation_id))?.user_id;
+  if (!createdBy) return;
+  await run(env.DB,
+    `INSERT INTO distribution_links (id, organisation_id, project_id, build_id, created_by, token_hash, title, access_scope, expires_at, allow_download, allow_feedback, installation_guidance, status, created_at)
+     VALUES (?,?,?,?,?,?,?, 'project_members', ?, 1, 1, ?, 'active', ?)`,
+    id, project.organisation_id, project.id, build.id, createdBy, await hashToken(token), `${build.version ?? "Build"} (${build.build_number ?? "?"})`,
+    addDays(org?.default_link_expiry_days ?? settings.defaultLinkExpiryDays), project.default_install_instructions ?? null, now);
+}
+
 export async function listLinks(env: AppEnv, actor: Actor, buildId: string) {
   await loadBuild(env, actor, buildId, "distribution:manage");
   const rows = await all<LinkRow>(env.DB, "SELECT * FROM distribution_links WHERE build_id = ? ORDER BY created_at DESC", buildId);

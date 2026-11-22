@@ -29,6 +29,8 @@ PORT = int(os.environ.get("WORKER_CONFIG_PORT", "8765"))
 PYTHON = sys.executable or "/usr/bin/python3"
 TOKEN = secrets.token_urlsafe(24)  # page-to-API token: other websites cannot read it
 
+STORE_FILE = Path(os.environ.get("WORKER_CONFIG_STORE", str(Path.home() / "Library" / "Application Support" / "CredeWorkerConfig" / "keys.json")))
+
 DEFAULTS = {
     "WORKER_NAME": "my-mac",
     "WORK_DIR": "/tmp/ipa-worker",
@@ -78,6 +80,43 @@ def write_env(updates: Dict[str, str], path: Path = ENV_FILE) -> None:
         f.write("\n".join(lines) + "\n")
     os.replace(tmp, path)
     os.chmod(path, 0o600)
+
+
+# ------------------------------------------------------------------ saved keys (one per platform address)
+def load_store() -> Dict[str, dict]:
+    try:
+        data = json.loads(STORE_FILE.read_text())
+        return {u: v for u, v in data.items() if isinstance(v, dict) and v.get("key")}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_store(store: Dict[str, dict]) -> None:
+    STORE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STORE_FILE.with_name(STORE_FILE.name + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(store, f)
+    os.replace(tmp, STORE_FILE)
+    os.chmod(STORE_FILE, 0o600)
+
+
+def remember(url: str, key: str) -> None:
+    if not url or not key:
+        return
+    store = load_store()
+    if store.get(url, {}).get("key") != key:
+        store[url] = {"key": key, "saved": time.strftime("%Y-%m-%d %H:%M")}
+        save_store(store)
+
+
+def forget(url: str) -> bool:
+    store = load_store()
+    if url in store:
+        del store[url]
+        save_store(store)
+        return True
+    return False
 
 
 def mask(key: str) -> str:
@@ -173,26 +212,44 @@ def log_tail(lines: int = 60) -> str:
     return SECRET_RE.sub("wkr_…", "\n".join(text.splitlines()[-lines:]))
 
 
+def verify(url: str, key: str, env_file: Optional[Path] = None) -> Tuple[str, str]:
+    """Try a key against a platform without touching the saved settings. Returns (state, message); state is ok | rejected | unreachable."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = env_file or Path(d) / ".env"
+        if env_file is None:
+            f.write_text(f"PLATFORM_URL={url}\nWORKER_TOKEN={key}\nWORKER_NAME={DEFAULTS['WORKER_NAME']}\nWORK_DIR={DEFAULTS['WORK_DIR']}\n")
+            os.chmod(f, 0o600)
+        try:
+            r = subprocess.run([PYTHON, "-m", "app.main", "--health-check"], cwd=str(WORKER_DIR), capture_output=True, text=True, timeout=40,
+                               env={**os.environ, "WORKER_ENV_FILE": str(f)})
+        except subprocess.TimeoutExpired:
+            return "unreachable", "Timed out. Check the address and your internet connection."
+    out = SECRET_RE.sub("wkr_…", (r.stdout + r.stderr).strip())[-600:]
+    if r.returncode == 0 and out.startswith("OK"):
+        return "ok", "Connected."
+    if "401" in out or "UNAUTHENTICATED" in out or "credential" in out.lower():
+        return "rejected", out or "The platform rejected this key."
+    return "unreachable", out or "Could not reach the platform."
+
+
 def test_connection() -> Tuple[bool, str]:
     cfg = read_env()
     if not cfg.get("PLATFORM_URL") or not cfg.get("WORKER_TOKEN"):
         return False, "Set the Platform URL and the Worker key first."
-    try:
-        r = subprocess.run([PYTHON, "-m", "app.main", "--health-check"], cwd=str(WORKER_DIR), capture_output=True, text=True, timeout=40,
-                           env={**os.environ, "WORKER_ENV_FILE": str(ENV_FILE)})
-    except subprocess.TimeoutExpired:
-        return False, "Timed out. Check the address and your internet connection."
-    out = SECRET_RE.sub("wkr_…", (r.stdout + r.stderr).strip())[-600:]
-    return r.returncode == 0, out or ("Connected." if r.returncode == 0 else "Failed.")
+    state, msg = verify(cfg["PLATFORM_URL"], cfg["WORKER_TOKEN"], ENV_FILE)
+    return state == "ok", msg
 
 
 def status() -> dict:
     cfg = read_env()
+    remember(cfg.get("PLATFORM_URL", ""), cfg.get("WORKER_TOKEN", ""))  # keep whatever is in use safely remembered
+    saved = [{"url": u, "keyPreview": mask(v["key"]), "saved": v.get("saved", ""), "active": u == cfg.get("PLATFORM_URL")} for u, v in sorted(load_store().items())]
     pids = worker_pids()
     return {
         "running": bool(pids), "pids": pids, "uptime": uptime(pids[0]) if pids else "",
         "platformUrl": cfg.get("PLATFORM_URL", ""), "keySet": bool(cfg.get("WORKER_TOKEN")), "keyPreview": mask(cfg.get("WORKER_TOKEN", "")),
-        "workerName": cfg.get("WORKER_NAME", DEFAULTS["WORKER_NAME"]), "log": log_tail(), "logFile": str(LOG_FILE), "configFile": str(ENV_FILE),
+        "workerName": cfg.get("WORKER_NAME", DEFAULTS["WORKER_NAME"]), "saved": saved, "log": log_tail(), "logFile": str(LOG_FILE), "configFile": str(ENV_FILE),
     }
 
 
@@ -248,14 +305,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             upd, err = validate(body.get("platformUrl"), body.get("workerKey"))
             if err:
                 return self._json(400, {"ok": False, "message": err})
-            if not upd:
-                return self._json(400, {"ok": False, "message": "Nothing to save."})
+            cfg = read_env()
+            url = upd.get("PLATFORM_URL") or cfg.get("PLATFORM_URL", "")
+            key = upd.get("WORKER_TOKEN")
+            if not url:
+                return self._json(400, {"ok": False, "message": "Enter the platform address."})
+            if key:
+                # A new key is checked against the platform first, so a wrong key can never replace a working one.
+                state, msg = verify(url, key)
+                if state == "rejected":
+                    return self._json(400, {"ok": False, "message": f"{url} rejected this key, so nothing was changed. Keys from another site (for example the old local one) will not work here."})
+                if state == "unreachable" and not body.get("force"):
+                    return self._json(400, {"ok": False, "message": "Could not check the key (" + msg[:120] + "). Nothing was changed."})
+                remember(url, key)
+            else:
+                key = load_store().get(url, {}).get("key") or (cfg.get("WORKER_TOKEN") if url == cfg.get("PLATFORM_URL") else None)
+                if not key:
+                    return self._json(400, {"ok": False, "message": "No key is saved for that address yet. Paste its key."})
+                remember(url, key)
+            changed = url != cfg.get("PLATFORM_URL") or key != cfg.get("WORKER_TOKEN")
+            if not changed:
+                return self._json(200, {"ok": True, "message": "Already using this address and key.", "needsRestart": False})
+            out = {"PLATFORM_URL": url, "WORKER_TOKEN": key}
             for k, v in DEFAULTS.items():
-                if k not in read_env():
-                    upd.setdefault(k, v)
-            write_env(upd)
+                if k not in cfg:
+                    out[k] = v
+            write_env(out)
             running = bool(worker_pids())
-            return self._json(200, {"ok": True, "message": "Saved." + (" Restart the worker to use the new settings." if running else ""), "needsRestart": running})
+            return self._json(200, {"ok": True, "message": "Saved and verified." + (" Restart the worker to use it." if running else ""), "needsRestart": running})
+        if self.path == "/api/forget":
+            u = str(body.get("url", ""))
+            if u == read_env().get("PLATFORM_URL"):
+                return self._json(400, {"ok": False, "message": "That address is in use. Switch to another one first."})
+            return self._json(200, {"ok": forget(u), "message": "Forgotten." if u else "Nothing to forget."})
         actions = {"/api/start": start_worker, "/api/stop": stop_worker, "/api/test": test_connection}
         if self.path == "/api/restart":
             stop_worker()

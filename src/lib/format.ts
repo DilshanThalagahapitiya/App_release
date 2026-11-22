@@ -1,6 +1,6 @@
 export const fmtBytes = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${(n / 1e3).toFixed(0)} KB` : `${n} B`;
-export const fmtDate = (s?: string | null) => s ? new Date(s).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
-export const fmtDay = (s?: string | null) => s ? new Date(s).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—";
+export const fmtDate = (s?: string | null) => s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "—";
+export const fmtDay = (s?: string | null) => s ? new Date(s).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "—";
 export function ago(s?: string | null) {
   if (!s) return "never";
   const d = (Date.now() - new Date(s).getTime()) / 1000;
