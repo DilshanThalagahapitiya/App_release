@@ -90,6 +90,8 @@ export const linkCreateSchema = z.object({
 });
 export const previewUpdateSchema = z.object({
   device: z.string().regex(/^[a-z0-9]{3,40}$/), expiresAt: z.string().datetime().nullable(), enabled: z.boolean(),
+  /** "min" = match the app's minimum iOS, "latest" = Appetize's newest, or a major version such as "18". */
+  osVersion: z.union([z.enum(["min", "latest"]), z.string().regex(/^\d{2}$/)]),
 }).partial().strict();
 export const linkUpdateSchema = z.object({
   title: trimmed(120), expiresAt: z.string().datetime().nullable(), maxDownloads: z.number().int().min(1).nullable(),

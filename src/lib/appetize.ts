@@ -64,3 +64,23 @@ export const embedUrl = (publicKey: string, device: string, osVersion?: string |
 /** Appetize's hosted player (works without the embed feature of the plan). */
 export const hostedUrl = (publicKey: string, device: string, osVersion?: string | null) =>
   `https://appetize.io/app/${encodeURIComponent(publicKey)}?device=${encodeURIComponent(device)}${osVersion ? `&osVersion=${encodeURIComponent(osVersion)}` : ""}`;
+
+/** iOS major versions Appetize offers per simulator device (https://docs.appetize.io/features/devices-and-os-versions). */
+const OS_ALL = [17, 18, 26, 27];
+export const DEVICE_OS: Record<string, number[]> = {
+  iphone11pro: OS_ALL, iphone12: OS_ALL, iphone13pro: OS_ALL, iphone13promax: OS_ALL, iphone14pro: OS_ALL, iphone14promax: OS_ALL, iphone15pro: OS_ALL, iphone15promax: OS_ALL,
+  iphone16pro: [18, 26, 27], iphone16promax: [18, 26, 27], iphone17pro: [26, 27], iphone17promax: [26, 27],
+  ipadair4thgeneration: OS_ALL, ipadpro129inch5thgeneration: OS_ALL, ipad9thgeneration: OS_ALL, ipadmini6thgeneration: [18, 26, 27],
+};
+export const osVersionsFor = (device: string): number[] => DEVICE_OS[device] ?? OS_ALL;
+
+/**
+ * The simulator iOS version for an app: the OLDEST version Appetize offers on this device that is at least the app's
+ * minimum iOS (so the app runs on the version it claims to support). Unknown minimum -> null (Appetize's default, the latest).
+ */
+export function pickOsVersion(device: string, minimumOS: string | null | undefined): string | null {
+  const major = minimumOS ? parseInt(minimumOS, 10) : NaN;
+  if (!Number.isFinite(major)) return null;
+  const list = osVersionsFor(device);
+  return String(list.find((v) => v >= major) ?? list[list.length - 1]);
+}

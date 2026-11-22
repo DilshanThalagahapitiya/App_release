@@ -19,6 +19,7 @@ import * as pwAccess from "@/app/p/[token]/access/route";
 import { one, run } from "@/lib/db";
 import { resolveLink, submitLinkPassword } from "@/services/distribution";
 import { previewPublicView, runDuePreviews, runPreviewUpload } from "@/services/simulator";
+import { pickOsVersion } from "@/lib/appetize";
 
 const TOKEN = "appetize-secret-token-123";
 interface Req { method: string; url: string; key: string | null; body: Record<string, unknown> | null }
@@ -184,6 +185,38 @@ describe("simulator preview: versions and history", () => {
   });
 });
 
+describe("simulator preview: iOS version follows the app's minimum", () => {
+  it("picks the oldest Appetize version that satisfies the minimum", () => {
+    expect(pickOsVersion("iphone15pro", "16.0")).toBe("17");
+    expect(pickOsVersion("iphone15pro", "17.0")).toBe("17");
+    expect(pickOsVersion("iphone15pro", "17.5")).toBe("17");
+    expect(pickOsVersion("iphone15pro", "18.0")).toBe("18");
+    expect(pickOsVersion("iphone16pro", "17.0")).toBe("18");     // no iOS 17 on this device
+    expect(pickOsVersion("iphone17pro", "15.0")).toBe("26");
+    expect(pickOsVersion("iphone15pro", "99.0")).toBe("27");     // newer than anything offered -> newest
+    expect(pickOsVersion("iphone15pro", null)).toBeNull();
+    expect(pickOsVersion("iphone15pro", "abc")).toBeNull();
+  });
+
+  it("sets the simulator iOS version from the build's minimum iOS and lets staff change it", async () => {
+    const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("OsVer"); mockAppetize();
+    const r = await uploadSim(S, t, simZip(["arm64"], { MinimumOSVersion: "18.0", CFBundleVersion: "5" })); const buildId = r.b!.data.id as string;
+    await runPreviewUpload(S.env, await previewIdOf(S as never, buildId));
+    const get = async () => (await call(previewRoute.GET, { cookie: t.adminCookie, params: { buildId } })).data;
+    const patch = (body: Record<string, unknown>) => call(previewRoute.PATCH, { cookie: t.adminCookie, method: "PATCH", params: { buildId }, body });
+    expect(await get()).toMatchObject({ os_version: "18", os_options: [17, 18, 26, 27] });
+    expect((await get()).embed_url).toContain("osVersion=18");
+    expect((await patch({ device: "iphone17pro" })).data).toMatchObject({ device: "iphone17pro", os_version: "26" }); // automatically follows the minimum
+    expect((await patch({ osVersion: "17" })).status).toBe(422);                                                      // not offered on this device
+    expect((await patch({ osVersion: "27" })).data.os_version).toBe("27");
+    expect((await patch({ device: "iphone15pro" })).data.os_version).toBe("27");                                       // explicit choice kept when valid
+    const latest = await patch({ osVersion: "latest" }); expect(latest.data.os_version).toBeNull();
+    expect((await get()).embed_url).not.toContain("osVersion");
+    expect((await patch({ osVersion: "min" })).data.os_version).toBe("18");
+    const pub = await previewPublicView(S.env, buildId); expect(pub.available && pub.embedUrl).toContain("osVersion=18");
+  });
+});
+
 describe("simulator preview: display mode", () => {
   it("offers an embed by default and Appetize's hosted player when the plan has no embeds", async () => {
     const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Disp"); mockAppetize();
@@ -193,8 +226,8 @@ describe("simulator preview: display mode", () => {
     expect((await call(settings.PUT, { cookie: S.ownerCookie, method: "PUT", body: { previewDisplay: "link" } })).status).toBe(200);
     const link = await previewPublicView(S.env, buildId);
     expect(link).toMatchObject({ available: true, display: "link" });
-    if (link.available) expect(link.openUrl).toBe("https://appetize.io/app/pk_demo?device=iphone15pro");
-    expect((await call(previewRoute.GET, { cookie: t.adminCookie, params: { buildId } })).data).toMatchObject({ display: "link", open_url: "https://appetize.io/app/pk_demo?device=iphone15pro" });
+    if (link.available) expect(link.openUrl).toBe("https://appetize.io/app/pk_demo?device=iphone15pro&osVersion=17");
+    expect((await call(previewRoute.GET, { cookie: t.adminCookie, params: { buildId } })).data).toMatchObject({ display: "link", open_url: "https://appetize.io/app/pk_demo?device=iphone15pro&osVersion=17" });
   });
 });
 

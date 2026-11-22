@@ -8,7 +8,7 @@ import { PreviewEmbed } from "@/app/p/[token]/client";
 import { apiFetch, fmtDate } from "@/lib/client";
 import type { BuildDetail } from "../layout";
 
-export interface PreviewDto { id: string; build_id: string; status: string; enabled: boolean; status_detail: string | null; error_code: string | null; attempts: number; file_type: string; mode: string; device: string; expires_at: string | null; uploaded_at: string | null; ready_at: string | null; appetize_configured: boolean; embed_url?: string; open_url?: string; display?: "embed" | "link" }
+export interface PreviewDto { id: string; build_id: string; status: string; enabled: boolean; status_detail: string | null; error_code: string | null; attempts: number; file_type: string; mode: string; device: string; os_version: string | null; os_options?: number[]; expires_at: string | null; uploaded_at: string | null; ready_at: string | null; appetize_configured: boolean; embed_url?: string; open_url?: string; display?: "embed" | "link" }
 interface HistoryItem extends PreviewDto { version: string | null; build_number: string | null; app_name: string | null; release_title: string | null; uploader: string | null }
 
 export default function BuildPreviewTab() {
@@ -44,8 +44,9 @@ export default function BuildPreviewTab() {
         {!p.appetize_configured && <Callout tone="warn" title="Appetize is not configured on the server">Set the <code>APPETIZE_API_TOKEN</code> secret (see docs/appetize.md), then press Retry.</Callout>}
         <Card title="Preview status" actions={<StatusBadge status={p.status}>{PREVIEW_LABEL[p.status] ?? p.status}</StatusBadge>}>
           <PreviewSteps status={p.status} detail={p.status === "ready" ? null : p.status_detail} />
-          <dl className="mt-4 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+          <dl className="mt-4 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-4">
             <div><dt className="muted text-xs">Device</dt><dd>{DEVICES.find(([v]) => v === p.device)?.[1] ?? p.device}</dd></div>
+            <div><dt className="muted text-xs">iOS version</dt><dd>{p.os_version ? `iOS ${p.os_version}` : "Latest"}{b.data?.minimum_os_version ? <span className="muted"> (app needs {b.data.minimum_os_version}+)</span> : null}</dd></div>
             <div><dt className="muted text-xs">Uploaded</dt><dd>{p.uploaded_at ? fmtDate(p.uploaded_at) : "—"}</dd></div>
             <div><dt className="muted text-xs">Expires</dt><dd>{p.expires_at ? fmtDate(p.expires_at) : "Never"}</dd></div>
           </dl>
@@ -57,6 +58,7 @@ export default function BuildPreviewTab() {
           </div>
           {live && <div className="mt-4 grid gap-3 border-t border-[var(--border)] pt-4 sm:grid-cols-2">
             <FormField label="Device" htmlFor="pv-dev"><Select id="pv-dev" value={p.device} onChange={(e) => patch.mutate({ device: e.target.value })}>{DEVICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></FormField>
+            <FormField label="Simulator iOS version" htmlFor="pv-os" hint="By default the simulator runs the oldest iOS version that still meets the app's minimum."><Select id="pv-os" value={p.os_version ?? "latest"} onChange={(e) => patch.mutate({ osVersion: e.target.value })}><option value="min">Match the app&apos;s minimum{b.data?.minimum_os_version ? ` (${b.data.minimum_os_version}+)` : ""}</option><option value="latest">Latest available</option>{(p.os_options ?? []).map((v) => <option key={v} value={String(v)}>iOS {v}</option>)}</Select></FormField>
             <FormField label="Preview expires" htmlFor="pv-exp" hint="Pick a new expiry or clear it."><div className="flex gap-2"><Select id="pv-exp" value="" onChange={(e) => e.target.value && patch.mutate({ expiresAt: e.target.value === "never" ? null : new Date(Date.now() + Number(e.target.value) * 86400000).toISOString() })}><option value="">Change…</option><option value="7">In 7 days</option><option value="30">In 30 days</option><option value="90">In 90 days</option><option value="never">Never</option></Select></div></FormField>
           </div>}
         </Card>

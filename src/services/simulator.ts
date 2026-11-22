@@ -9,7 +9,7 @@ import { loadBuild, loadProject } from "@/lib/access";
 import { signedFileUrl } from "@/lib/storage";
 import { derivePublicToken } from "@/services/distribution";
 import { hashToken } from "@/lib/crypto";
-import { createApp, updateApp, setAppDisabled, deleteApp, appetizeConfigured, embedUrl, hostedUrl, AppetizeError, IOS_DEVICES } from "@/lib/appetize";
+import { createApp, updateApp, setAppDisabled, deleteApp, appetizeConfigured, embedUrl, hostedUrl, AppetizeError, IOS_DEVICES, pickOsVersion, osVersionsFor } from "@/lib/appetize";
 import { getSettings } from "@/lib/settings";
 import { detectArchiveKind, inspectSimulatorTarGz, inspectSimulatorZip, SimulatorInspectError, type SimulatorInspection } from "@/lib/simulator-inspect";
 import type { ByteSource } from "@/lib/ipa-inspect";
@@ -79,9 +79,9 @@ export async function createSimulatorBuild(env: AppEnv, actor: Actor, project: P
     stmt(env.DB, "INSERT INTO build_files (id, build_id, file_type, r2_object_key, mime_type, size_bytes, sha256, created_at) VALUES (?,?,?,?,?,?,?,?)",
       newId(), s.build_id, "ipa", s.r2_object_key, "application/octet-stream", s.expected_size_bytes, s.expected_sha256, now),
     stmt(env.DB,
-      `INSERT INTO simulator_previews (id, organisation_id, project_id, build_id, status, status_detail, file_type, mode, appetize_public_key, device, expires_at, uploaded_at, created_by, created_at, updated_at)
-       VALUES (?,?,?,?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, s.organisation_id, s.project_id, s.build_id, detail, inspection.fileType, mode, existingKey, device, days ? addSeconds(days * 86400) : null, now, actor.userId, now, now),
+      `INSERT INTO simulator_previews (id, organisation_id, project_id, build_id, status, status_detail, file_type, mode, appetize_public_key, device, os_version, expires_at, uploaded_at, created_by, created_at, updated_at)
+       VALUES (?,?,?,?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, s.organisation_id, s.project_id, s.build_id, detail, inspection.fileType, mode, existingKey, device, pickOsVersion(device, inspection.app.minimumOSVersion), days ? addSeconds(days * 86400) : null, now, actor.userId, now, now),
   ]);
   await audit(env, { organisationId: s.organisation_id, actorUserId: actor.userId, action: "simulator_preview.created", resourceType: "build", resourceId: s.build_id, metadata: { mode, fileType: inspection.fileType }, req });
   await enqueuePreview(env, id);
@@ -178,7 +178,7 @@ export function previewDto(env: AppEnv, p: SimulatorPreviewRow, staff: boolean, 
   const state = previewState(p);
   return {
     id: p.id, build_id: p.build_id, project_id: p.project_id, status: state, enabled: !!p.enabled, status_detail: p.status_detail, error_code: p.error_code, attempts: p.attempts,
-    file_type: p.file_type, mode: p.mode, device: p.device, os_version: p.os_version, expires_at: p.expires_at, uploaded_at: p.uploaded_at, ready_at: p.ready_at, created_at: p.created_at,
+    file_type: p.file_type, mode: p.mode, device: p.device, os_version: p.os_version, os_options: osVersionsFor(p.device), expires_at: p.expires_at, uploaded_at: p.uploaded_at, ready_at: p.ready_at, created_at: p.created_at,
     appetize_configured: appetizeConfigured(env),
     display,
     ...(staff && p.appetize_public_key && state === "ready" ? { embed_url: embedUrl(p.appetize_public_key, p.device, p.os_version), open_url: hostedUrl(p.appetize_public_key, p.device, p.os_version) } : {}),
@@ -214,10 +214,10 @@ export async function retryPreview(env: AppEnv, actor: Actor, buildId: string, r
   await run(env.DB, "UPDATE simulator_previews SET status = 'pending', attempts = 0, next_attempt_at = NULL, error_code = NULL, status_detail = 'Retry requested.', updated_at = ? WHERE id = ?", nowIso(), p.id);
   await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "simulator_preview.retry", resourceType: "build", resourceId: buildId, req });
   if (!(await enqueuePreview(env, p.id))) await runPreviewUpload(env, p.id);
-  return previewDto(env, await loadPreview(env, buildId), true);
+  return previewDto(env, await loadPreview(env, buildId), true, (await getSettings(env)).previewDisplay);
 }
 
-export async function updatePreview(env: AppEnv, actor: Actor, buildId: string, patch: { device?: string; expiresAt?: string | null; enabled?: boolean }, req?: Request) {
+export async function updatePreview(env: AppEnv, actor: Actor, buildId: string, patch: { device?: string; expiresAt?: string | null; enabled?: boolean; osVersion?: string }, req?: Request) {
   const { build } = await loadBuild(env, actor, buildId, "distribution:manage");
   if (build.build_kind !== "simulator") throw notFound("Simulator preview");
   const p = await loadPreview(env, buildId);
@@ -225,10 +225,18 @@ export async function updatePreview(env: AppEnv, actor: Actor, buildId: string, 
   if (patch.device !== undefined && !IOS_DEVICES.includes(patch.device as never)) throw new ApiError("VALIDATION_ERROR", "Unknown device.");
   if (patch.expiresAt && new Date(patch.expiresAt) <= new Date()) throw new ApiError("VALIDATION_ERROR", "The expiry must be in the future.");
   const sets: string[] = []; const args: unknown[] = [];
+  const device = patch.device ?? p.device;
   if (patch.device !== undefined) { sets.push("device = ?"); args.push(patch.device); }
+  // iOS version: explicit choice wins; otherwise keep following the app's minimum iOS when the device changes.
+  let os: string | null | undefined;
+  if (patch.osVersion === "min") os = pickOsVersion(device, build.minimum_os_version);
+  else if (patch.osVersion === "latest") os = null;
+  else if (patch.osVersion !== undefined) { if (!osVersionsFor(device).includes(Number(patch.osVersion))) throw new ApiError("VALIDATION_ERROR", `iOS ${patch.osVersion} is not available on this device.`); os = patch.osVersion; }
+  else if (patch.device !== undefined) os = p.os_version === null || p.os_version === pickOsVersion(p.device, build.minimum_os_version) || !osVersionsFor(device).includes(Number(p.os_version)) ? pickOsVersion(device, build.minimum_os_version) : p.os_version;
+  if (os !== undefined) { sets.push("os_version = ?"); args.push(os); }
   if (patch.expiresAt !== undefined) { sets.push("expires_at = ?"); args.push(patch.expiresAt); }
   if (patch.enabled !== undefined) { sets.push("enabled = ?"); args.push(patch.enabled ? 1 : 0); }
-  if (!sets.length) return previewDto(env, p, true);
+  if (!sets.length) return previewDto(env, p, true, (await getSettings(env)).previewDisplay);
   await run(env.DB, `UPDATE simulator_previews SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`, ...args, nowIso(), p.id);
   // The Appetize key may be shared by anyone who has it, so also stop/start streaming on Appetize itself (best effort).
   if (p.appetize_public_key && p.status === "ready" && (patch.enabled !== undefined || patch.expiresAt !== undefined)) {
@@ -239,7 +247,7 @@ export async function updatePreview(env: AppEnv, actor: Actor, buildId: string, 
     } catch (e) { console.error(`simulator preview ${p.id}: could not ${live ? "enable" : "disable"} the Appetize app (${(e as AppetizeError).code ?? "error"})`); }
   }
   await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "simulator_preview.updated", resourceType: "build", resourceId: buildId, metadata: { fields: Object.keys(patch) }, req });
-  return previewDto(env, await loadPreview(env, buildId), true);
+  return previewDto(env, await loadPreview(env, buildId), true, (await getSettings(env)).previewDisplay);
 }
 
 export async function deletePreview(env: AppEnv, actor: Actor, buildId: string, req?: Request) {
