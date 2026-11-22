@@ -8,7 +8,7 @@ const cx = (...a: (string | false | null | undefined)[]) => a.filter(Boolean).jo
 // ---------------------------------------------------------------- buttons & fields
 type BtnProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost"; loading?: boolean; size?: "sm" | "md"; why?: string };
 export const Button = React.forwardRef<HTMLButtonElement, BtnProps>(function Button({ variant = "secondary", loading, size = "md", why, className, children, disabled, ...p }, ref) {
-  const v = { primary: "bg-[var(--accent)] text-[var(--accent-text)] hover:bg-[var(--accent-hover)] border-transparent", secondary: "bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] border-[var(--border-strong)]", danger: "bg-[var(--bad)] text-white border-transparent hover:opacity-90", ghost: "bg-transparent border-transparent text-[var(--text-2)] hover:bg-[var(--surface-2)]" }[variant];
+  const v = { primary: "bg-[var(--green)] text-white hover:bg-[var(--green-hover)] border-transparent", secondary: "bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] border-[var(--border-strong)]", danger: "bg-[var(--bad)] text-white border-transparent hover:opacity-90", ghost: "bg-transparent border-transparent text-[var(--text-2)] hover:bg-[var(--surface-2)]" }[variant];
   return (
     <button ref={ref} title={disabled && why ? why : p.title} disabled={disabled || loading} className={cx("inline-flex items-center justify-center gap-2 rounded-lg border font-medium transition disabled:opacity-50 disabled:cursor-not-allowed", size === "sm" ? "h-8 px-2.5 text-[13px]" : "h-9 px-3.5", v, className)} {...p}>
       {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}{children}

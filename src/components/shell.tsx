@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Bell, Box, ChevronsLeft, ChevronsRight, FolderKanban, Gauge, LogOut, Menu, Moon, Package, ScrollText, Server, Settings, Share2, Sun, MessageSquare, Users, Building2, Download, UserCircle, X } from "lucide-react";
 import { apiFetch, ago } from "@/lib/client";
 import { Button, cx, StatusBadge } from "./ui";
+import { Brand } from "./brand";
 
 export interface Me { id: string; email: string; displayName: string; isPlatformOwner: boolean; memberships: { organisation_id: string; name: string; role: string }[]; portal: "admin" | "customer"; unreadNotifications: number; emailConfigured: boolean }
 type Item = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; ownerOnly?: boolean; adminOnly?: boolean };
@@ -38,7 +39,7 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
     <nav aria-label="Main" className="flex flex-col gap-0.5 p-2">
       {items.map((i) => (
         <a key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined} title={collapsed ? i.label : undefined}
-          className={cx("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium", active(i.href) ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "text-[var(--text-2)] hover:bg-[var(--surface-2)]")} style={{ textDecoration: "none" }}>
+          className={cx("flex items-center gap-3 px-3.5 py-2.5 text-[14px] font-medium", active(i.href) ? "border-l-[3px] border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]" : "border-l-[3px] border-transparent text-[var(--text)] hover:bg-[var(--surface-2)]")} style={{ textDecoration: "none" }}>
           <i.icon className="h-4 w-4 shrink-0" /><span className={cx(collapsed && "md:sr-only")}>{i.label}</span>
         </a>))}
     </nav>
@@ -46,18 +47,18 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
   return (
     <div className="min-h-screen md:flex">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-[var(--surface)] focus:p-2">Skip to content</a>
-      <aside className={cx("sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] md:flex", collapsed ? "w-14" : "w-60")}>
-        <div className="flex h-14 items-center gap-2 border-b border-[var(--border)] px-3.5"><Box className="h-5 w-5 text-[var(--accent)]" /><span className={cx("font-semibold", collapsed && "sr-only")}>Release Portal</span></div>
+      <aside className={cx("sticky top-0 hidden h-screen shrink-0 flex-col bar-accent border-r border-[var(--border)] bg-[var(--surface)] md:flex", collapsed ? "w-14" : "w-60")}>
+        <div className="flex h-16 items-center px-3.5">{collapsed ? <Box className="h-5 w-5 text-[var(--accent)]" /> : <Brand />}</div>
         <div className="flex-1 overflow-y-auto">{nav}</div>
         <button onClick={() => { setCollapsed(!collapsed); try { localStorage.setItem("nav", collapsed ? "0" : "1"); } catch { /* ignore */ } }} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="m-2 flex items-center justify-center rounded-lg p-2 text-[var(--text-3)] hover:bg-[var(--surface-2)]">{collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}</button>
       </aside>
       {mobile && (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobile(false)} />
-          <div className="absolute left-0 top-0 h-full w-72 bg-[var(--surface)] shadow-xl"><div className="flex h-14 items-center justify-between border-b border-[var(--border)] px-4"><span className="font-semibold">Release Portal</span><button aria-label="Close menu" onClick={() => setMobile(false)}><X className="h-5 w-5" /></button></div>{nav}</div>
+          <div className="absolute left-0 top-0 h-full w-72 bg-[var(--surface)] shadow-xl"><div className="flex h-14 items-center justify-between border-b border-[var(--border)] px-4"><Brand /><button aria-label="Close menu" onClick={() => setMobile(false)}><X className="h-5 w-5" /></button></div>{nav}</div>
         </div>)}
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)]/95 px-4 backdrop-blur">
+        <header className="bar-accent sticky top-0 z-30 flex h-14 items-center justify-between gap-3 bg-[var(--surface)]/95 px-4 shadow-[var(--shadow)] backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
             <button className="md:hidden" aria-label="Open menu" onClick={() => setMobile(true)}><Menu className="h-5 w-5" /></button>
             <span className="truncate text-[13px] text-[var(--text-2)]">{me.isPlatformOwner ? "Platform Owner" : me.memberships.map((m) => m.name).join(", ") || "No organisation"}</span>
@@ -103,7 +104,7 @@ function UserMenu({ me }: { me: Me }) {
   const out = useMutation({ mutationFn: () => apiFetch("/auth/logout", { method: "POST" }), onSettled: () => { location.href = "/auth/login"; } });
   return (
     <div className="relative">
-      <Button variant="ghost" size="sm" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-semibold text-[var(--accent)]">{me.displayName.slice(0, 1).toUpperCase()}</span></Button>
+      <Button variant="ghost" size="sm" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}><span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-semibold text-[var(--accent)]">{me.displayName.slice(0, 1).toUpperCase()}</span><span className="hidden text-[14px] font-medium sm:inline">{me.displayName}</span></span></Button>
       {open && (
         <div role="menu" className="card absolute right-0 z-50 mt-2 w-64 p-1">
           <div className="px-3 py-2"><p className="truncate font-medium">{me.displayName}</p><p className="truncate text-xs muted">{me.email}</p>{me.isPlatformOwner && <div className="mt-1"><StatusBadge status="info">Platform Owner</StatusBadge></div>}</div>
