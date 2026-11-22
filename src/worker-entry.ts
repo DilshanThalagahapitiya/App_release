@@ -5,6 +5,7 @@ import handler from "../.open-next/worker.js";
 import { resolveStorage, type AppEnv, type NotifyMessage } from "./lib/env";
 import { runDaily, runFrequent } from "./services/maintenance";
 import { deliverOutbox } from "./lib/email";
+import { runPreviewUpload } from "./services/simulator";
 
 // Re-export Durable Objects / classes OpenNext generates, if any, so wrangler can bind them.
 // @ts-expect-error — generated
@@ -23,6 +24,7 @@ export default {
     for (const msg of batch.messages) {
       try {
         if (msg.body.type === "email") await deliverOutbox(resolveStorage(env), msg.body.outboxId);
+        else if (msg.body.type === "appetize") await runPreviewUpload(resolveStorage(env), msg.body.previewId);
         msg.ack();
       } catch {
         msg.retry({ delaySeconds: Math.min(900, 30 * 2 ** msg.attempts) });

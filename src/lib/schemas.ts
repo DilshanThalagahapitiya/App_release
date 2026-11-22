@@ -41,14 +41,20 @@ export const projectCreateSchema = z.object({
 export const projectUpdateSchema = projectCreateSchema.omit({ organisationId: true }).partial().extend({ status: z.enum(["active", "paused", "archived"]).optional() }).strict();
 export const projectMemberSchema = z.object({ userId: z.string().uuid(), role: z.enum(PROJECT_ROLES) });
 
-export const DISTRIBUTION_METHODS = ["determine_from_ipa", "ad_hoc", "development", "enterprise", "testflight", "app_store", "download_only"] as const;
+export const DISTRIBUTION_METHODS = ["determine_from_ipa", "ad_hoc", "development", "enterprise", "testflight", "app_store", "download_only", "simulator_preview"] as const;
 
 export const uploadSessionSchema = z.object({
-  filename: z.string().trim().min(1).max(255).refine((f) => f.toLowerCase().endsWith(".ipa"), "File must have an .ipa extension"),
+  kind: z.enum(["ipa", "simulator"]).default("ipa"),
+  filename: z.string().trim().min(1).max(255),
   sizeBytes: z.number().int().positive(),
   sha256: sha256Schema,
   mimeType: z.string().max(100).optional(),
   idempotencyKey: z.string().min(8).max(100).optional(),
+}).superRefine((v, ctx) => {
+  const f = v.filename.toLowerCase();
+  if (v.kind === "ipa" && !f.endsWith(".ipa")) ctx.addIssue({ code: "custom", path: ["filename"], message: "File must have an .ipa extension" });
+  if (v.kind === "simulator" && !(f.endsWith(".zip") || f.endsWith(".tar.gz") || f.endsWith(".tgz")))
+    ctx.addIssue({ code: "custom", path: ["filename"], message: v.kind === "simulator" && f.endsWith(".ipa") ? "A device .ipa cannot run in the simulator preview. Upload a zipped iOS Simulator .app (.zip or .tar.gz) instead." : "Simulator builds must be a .zip or .tar.gz of the .app folder" });
 });
 export const buildCreateSchema = z.object({
   uploadSessionId: z.string().uuid(),
@@ -57,10 +63,16 @@ export const buildCreateSchema = z.object({
   distributionMethod: z.enum(DISTRIBUTION_METHODS).default("determine_from_ipa"),
   externalInstallUrl: httpsUrl.optional().nullable().or(z.literal("").transform(() => null)),
   allowDownloadWhenIneligible: z.boolean().default(false),
+  /** Interactive Simulator Preview options (ignored for IPA builds). */
+  preview: z.object({
+    device: z.string().regex(/^[a-z0-9]{3,40}$/).default("iphone15pro"),
+    expiresInDays: z.number().int().min(1).max(365).nullable().optional(),
+    updateExisting: z.boolean().default(false),
+  }).optional(),
 });
 export const buildUpdateSchema = z.object({
   release_title: optText(200), release_notes: optText(8000), internal_notes: optText(8000),
-  distribution_method: z.enum(DISTRIBUTION_METHODS), external_install_url: httpsUrl.nullable().or(z.literal("").transform(() => null)),
+  distribution_method: z.enum(DISTRIBUTION_METHODS.filter((m) => m !== "simulator_preview") as unknown as [string, ...string[]]), external_install_url: httpsUrl.nullable().or(z.literal("").transform(() => null)),
   allow_download_when_ineligible: z.boolean(),
 }).partial().strict();
 
@@ -74,7 +86,11 @@ export const linkCreateSchema = z.object({
   maxDownloads: z.number().int().min(1).max(100000).optional().nullable(),
   allowDownload: z.boolean().default(true), allowFeedback: z.boolean().default(true),
   customerReleaseNotes: optText(8000), installationGuidance: optText(4000),
+  kind: z.enum(["install", "preview"]).default("install"),
 });
+export const previewUpdateSchema = z.object({
+  device: z.string().regex(/^[a-z0-9]{3,40}$/), expiresAt: z.string().datetime().nullable(), enabled: z.boolean(),
+}).partial().strict();
 export const linkUpdateSchema = z.object({
   title: trimmed(120), expiresAt: z.string().datetime().nullable(), maxDownloads: z.number().int().min(1).nullable(),
   allowDownload: z.boolean(), allowFeedback: z.boolean(), customerReleaseNotes: optText(8000), installationGuidance: optText(4000),
@@ -111,6 +127,7 @@ export const settingsSchema = z.object({
   auditRetentionDays: z.number().int().min(30).max(3650).optional(),
   downloadEventRetentionDays: z.number().int().min(7).max(3650).optional(),
   validationMode: z.enum(["on", "cloud", "off"]).optional(),
+  previewDisplay: z.enum(["embed", "link"]).optional(),
 }).strict();
 
 export const paginationSchema = z.object({

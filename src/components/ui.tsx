@@ -47,6 +47,7 @@ const STATUS_TONE: Record<string, string> = {
   published: "good", unpublished: "neutral", archived: "neutral", active: "good", revoked: "bad", expired: "warn", exhausted: "warn", draft: "neutral",
   new: "info", triaged: "info", in_progress: "info", need_more_info: "warn", resolved: "good", closed: "neutral",
   critical: "bad", high: "bad", medium: "warn", low: "neutral", online: "good", offline: "bad", paused: "warn",
+  uploading: "info", processing: "info", ready: "good", disabled: "neutral", deleted: "neutral",
 };
 export function StatusBadge({ status, children }: { status: string; children?: React.ReactNode }) {
   const tone = STATUS_TONE[status] ?? "neutral";

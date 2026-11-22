@@ -10,7 +10,8 @@ import { loadBuild, loadProject } from "@/lib/access";
 import { can } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { runCloudCheck } from "@/services/cloud-check";
-import { keys, isZip, sha256OfObject } from "@/lib/storage";
+import { keys, isZip, isGzip, sha256OfObject } from "@/lib/storage";
+import { createSimulatorBuild, cleanupPreviewForBuild, type SimulatorInput } from "@/services/simulator";
 import { notify, projectStaffIds, projectMemberIds } from "@/lib/notify";
 import type { BuildRow } from "@/lib/types";
 
@@ -135,7 +136,8 @@ export async function completeUpload(env: AppEnv, actor: Actor, sessionId: strin
   const head = await env.BUCKET.head(s.r2_object_key);
   if (!head || head.size !== s.expected_size_bytes) return fail("Uploaded size does not match the declared size.");
   const magic = await env.BUCKET.get(s.r2_object_key, { range: { offset: 0, length: 4 } });
-  if (!magic || !isZip(new Uint8Array(await magic.arrayBuffer()))) return fail("The file is not a ZIP/IPA archive.");
+  if (!magic) return fail("The file is not a ZIP/IPA archive.");
+  { const m4 = new Uint8Array(await magic.arrayBuffer()); if (!isZip(m4) && !isGzip(m4)) return fail("The file is not a ZIP, IPA or TAR.GZ archive."); }
   const actual = await sha256OfObject(env, s.r2_object_key);
   if (actual === null) return fail("Uploaded object is missing.");
   if (actual !== s.expected_sha256) return fail("SHA-256 checksum does not match the declared checksum.");
@@ -160,7 +162,7 @@ export async function abortUpload(env: AppEnv, actor: Actor, sessionId: string, 
 /** Create the build record + validation job from a completed upload session. Idempotent per session. */
 export async function createBuild(
   env: AppEnv, actor: Actor, projectId: string,
-  input: { uploadSessionId: string; releaseTitle?: string | null; releaseNotes?: string | null; internalNotes?: string | null; declaredVersion?: string | null; declaredBuildNumber?: string | null; distributionMethod: string; externalInstallUrl?: string | null; allowDownloadWhenIneligible: boolean },
+  input: { uploadSessionId: string; releaseTitle?: string | null; releaseNotes?: string | null; internalNotes?: string | null; declaredVersion?: string | null; declaredBuildNumber?: string | null; distributionMethod: string; externalInstallUrl?: string | null; preview?: SimulatorInput["preview"]; allowDownloadWhenIneligible: boolean },
   req?: Request,
 ) {
   const { project } = await loadProject(env, actor, projectId, "build:upload");
@@ -169,6 +171,7 @@ export async function createBuild(
   if (s.status !== "completed") throw new ApiError("INVALID_STATE", "The upload has not been completed and verified.");
   const existing = await one<BuildRow>(env.DB, "SELECT * FROM builds WHERE id = ?", s.build_id);
   if (existing) return buildDto(existing, true); // idempotent replay
+  if (input.distributionMethod === "simulator_preview") return buildDto(await createSimulatorBuild(env, actor, project, s as never, input, req), true);
   if ((input.distributionMethod === "testflight" || input.distributionMethod === "app_store") && !input.externalInstallUrl)
     throw new ApiError("VALIDATION_ERROR", "An official Apple install/invitation URL is required for TestFlight and App Store distribution.");
   const now = nowIso(); const jobId = newId();
@@ -308,6 +311,7 @@ export async function publishBuild(env: AppEnv, actor: Actor, buildId: string, r
   const { build, project } = await loadBuild(env, actor, buildId, "build:publish");
   if (build.publish_status === "archived") throw new ApiError("INVALID_STATE", "Archived builds cannot be published.");
   if (project.status !== "active") throw new ApiError("INVALID_STATE", "The project is not active.");
+  if (build.build_kind === "simulator") throw new ApiError("INVALID_STATE", "Simulator builds are shared with clients through preview links, not published. Create a preview link on the Preview tab.");
   const external = build.distribution_method === "testflight" || build.distribution_method === "app_store";
   if (external) {
     if (!build.external_install_url) throw new ApiError("INVALID_STATE", "Configure the official Apple install URL before publishing.");
@@ -350,6 +354,7 @@ export async function deleteBuild(env: AppEnv, actor: Actor, buildId: string, re
     stmt(env.DB, "UPDATE distribution_links SET status = 'revoked', revoked_at = ? WHERE build_id = ? AND status != 'revoked'", now, buildId),
     stmt(env.DB, "UPDATE worker_jobs SET status = 'cancelled', updated_at = ? WHERE build_id = ? AND status IN ('queued','claimed','running')", now, buildId),
   ]);
+  if (build.build_kind === "simulator") await cleanupPreviewForBuild(env, buildId);
   await audit(env, { organisationId: build.organisation_id, actorUserId: actor.userId, action: "build.deleted", resourceType: "build", resourceId: buildId, req });
   return { id: buildId, deleted: true };
 }

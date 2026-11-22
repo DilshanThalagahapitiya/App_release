@@ -38,3 +38,9 @@ curl -X POST https://portal.example.com/api/v1/auth/login -H 'content-type: appl
   -H 'origin: https://portal.example.com' -d '{"email":"a@b.com","password":"…"}' -c jar
 curl -b jar https://portal.example.com/api/v1/projects?pageSize=5
 ```
+
+## Interactive Simulator Preview (Appetize.io)
+Upload: `POST /projects/:id/upload-sessions` with `kind: "simulator"` (`.zip` / `.tar.gz` / `.tgz`; `.ipa` is rejected) → parts → complete, then `POST /projects/:id/builds` with `distributionMethod: "simulator_preview"` and optional `preview: {device, expiresInDays, updateExisting}`. The archive is validated (device IPA / device-built `.app` / missing `.app` / bad architecture → `422`), a duplicate (same SHA-256 in the project) → `409`, and the upload to Appetize runs in the background (queue + 5-minute cron retry).
+Staff: `GET /projects/:id/previews` (history + `appetizeConfigured`) · `GET|PATCH|DELETE /builds/:id/preview` (`PATCH {device, expiresAt, enabled}`) · `POST /builds/:id/preview/retry`.
+Client links reuse distribution links: `POST /builds/:id/distribution-links` with `kind: "preview"` (only when the preview is Ready). Preview URLs are `/p/<token>`; password: `POST /p/<token>/access {password}`.
+Preview `status`: `pending | uploading | processing | ready | failed | expired | disabled | deleted`. See docs/appetize.md.

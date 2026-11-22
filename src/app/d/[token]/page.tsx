@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { getEnv } from "@/lib/env";
 import { ApiError } from "@/lib/errors";
 import { installAction, logEvent, publicView, resolveLink } from "@/services/distribution";
@@ -24,6 +25,7 @@ export default async function DistributionPage({ params }: { params: Promise<{ t
   try { r = await resolveLink(env, req, token); }
   catch (e) { if (e instanceof ApiError) return <Notice title="Link not found" body="This link doesn't exist or has been removed. Check that you copied it completely." />; throw e; }
 
+  if (r.link.kind === "preview") redirect(`/p/${token}`);
   if (r.access === "unavailable") return <Notice title={r.state === "revoked" ? "This link was revoked" : r.state === "expired" ? "This link has expired" : r.state === "exhausted" ? "Download limit reached" : "This build is no longer available"} body="Ask the person who shared it with you for a new link." />;
   if (r.access === "login_required") return <Notice title="Sign in to continue" body="This build was shared with specific people. Sign in with the account you were invited with." href={`/auth/login?next=${encodeURIComponent(`/d/${token}`)}`} cta="Sign in" />;
   if (r.access === "denied") return <Notice title="You don't have access" body={r.reason ?? "This link was not shared with your account."} />;

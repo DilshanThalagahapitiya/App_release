@@ -9,3 +9,6 @@ EMAIL_PROVIDER=none
 EMAIL_FROM_ADDRESS=
 EMAIL_FROM_NAME=
 EMAIL_API_KEY=
+
+# Interactive Simulator Preview (Appetize.io) - optional
+APPETIZE_API_TOKEN=

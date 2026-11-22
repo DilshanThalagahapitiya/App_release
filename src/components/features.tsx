@@ -27,7 +27,7 @@ export function Async<T>({ q, children, skeleton }: { q: { isLoading: boolean; e
 export interface BuildDto {
   id: string; project_id: string; app_name: string | null; bundle_identifier: string | null; version: string | null; build_number: string | null; minimum_os_version: string | null;
   supported_device_families: number[]; architectures: string[]; file_size_bytes: number; sha256: string; uploaded_at: string; uploader_name?: string | null;
-  validation_status: string; eligibility_status: string; processing_status: string; publish_status: string; release_title: string | null; release_notes: string | null; internal_notes?: string | null;
+  build_kind?: "ipa" | "simulator"; validation_status: string; eligibility_status: string; processing_status: string; publish_status: string; release_title: string | null; release_notes: string | null; internal_notes?: string | null;
   distribution_method: string; external_install_url: string | null; allow_download_when_ineligible: number; original_filename: string; validated_at: string | null; published_at: string | null;
 }
 const FAMILIES: Record<number, string> = { 1: "iPhone", 2: "iPad" };
@@ -145,7 +145,7 @@ export function CopyButton({ text, label: l = "Copy link" }: { text: string; lab
   return <Button size="sm" onClick={async () => { try { await navigator.clipboard.writeText(text); toast("ok", "Copied to clipboard"); } catch { toast("err", "Copy failed — select the link and copy manually."); } }}><Copy className="h-4 w-4" />{l}</Button>;
 }
 
-export interface LinkDto { id: string; title: string; access_scope: string; state: string; expires_at: string | null; max_downloads: number | null; download_count: number; password_protected: boolean; allow_download: number; allow_feedback: number; url?: string; created_at: string; build_id: string }
+export interface LinkDto { kind?: "install" | "preview"; id: string; title: string; access_scope: string; state: string; expires_at: string | null; max_downloads: number | null; download_count: number; password_protected: boolean; allow_download: number; allow_feedback: number; url?: string; created_at: string; build_id: string }
 export function DistributionLinkCard({ l, onRevoke, href }: { l: LinkDto; onRevoke?: () => void; href?: string }) {
   return (
     <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
@@ -157,15 +157,15 @@ export function DistributionLinkCard({ l, onRevoke, href }: { l: LinkDto; onRevo
 }
 
 // ---------------------------------------------------------------- dropzone
-export function FileDropzone({ file, onFile, disabled, accept = ".ipa" }: { file: File | null; onFile: (f: File | null) => void; disabled?: boolean; accept?: string }) {
+export function FileDropzone({ file, onFile, disabled, accept = ".ipa", prompt = "Drag and drop an already-signed .ipa here", note = "The file is uploaded as-is. This platform never re-signs or modifies an IPA.", ariaLabel = "Choose IPA file" }: { file: File | null; onFile: (f: File | null) => void; disabled?: boolean; accept?: string; prompt?: string; note?: string; ariaLabel?: string }) {
   const [over, setOver] = React.useState(false); const input = React.useRef<HTMLInputElement>(null);
   return (
     <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); if (!disabled && e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); }}
       className={cx("flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-10 text-center", over ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border-strong)]")}>
       <FileUp className="h-8 w-8 text-[var(--text-3)]" aria-hidden />
-      {file ? <p className="font-medium">{file.name} <span className="muted">({fmtBytes(file.size)})</span></p> : <p className="font-medium">Drag and drop an already-signed .ipa here</p>}
-      <p className="text-xs muted">The file is uploaded as-is. This platform never re-signs or modifies an IPA.</p>
-      <input ref={input} type="file" accept={accept} className="sr-only" aria-label="Choose IPA file" disabled={disabled} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      {file ? <p className="font-medium">{file.name} <span className="muted">({fmtBytes(file.size)})</span></p> : <p className="font-medium">{prompt}</p>}
+      <p className="text-xs muted">{note}</p>
+      <input ref={input} type="file" accept={accept} className="sr-only" aria-label={ariaLabel} disabled={disabled} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
       <Button onClick={() => input.current?.click()} disabled={disabled}>{file ? "Choose a different file" : "Choose file"}</Button>
     </div>
   );

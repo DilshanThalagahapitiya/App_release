@@ -1,9 +1,9 @@
 "use client";
 import * as React from "react";
 import { BackButton, InstallHint } from "./app-bits";
-import { CircleHelp, Download, FileText, MessageSquare, PackageCheck, type LucideIcon } from "lucide-react";
+import { CircleHelp, Download, FileText, MessageSquare, PackageCheck, Smartphone, type LucideIcon } from "lucide-react";
 
-const ICONS: Record<string, LucideIcon> = { install: Download, notes: FileText, feedback: MessageSquare, help: CircleHelp };
+const ICONS: Record<string, LucideIcon> = { preview: Smartphone, install: Download, notes: FileText, feedback: MessageSquare, help: CircleHelp };
 export interface FrameTab { id: string; label: string; icon: keyof typeof ICONS; content: React.ReactNode }
 
 /**

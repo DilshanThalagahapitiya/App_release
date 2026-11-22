@@ -1,7 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { S3Bucket } from "./s3-bucket";
 
-export type NotifyMessage = { type: "email"; outboxId: string };
+export type NotifyMessage = { type: "email"; outboxId: string } | { type: "appetize"; previewId: string };
 
 export interface AppEnv {
   DB: D1Database;
@@ -24,6 +24,10 @@ export interface AppEnv {
   STORAGE_S3_BUCKET?: string;
   STORAGE_S3_ACCESS_KEY_ID?: string;
   STORAGE_S3_SECRET_ACCESS_KEY?: string;
+  /** Appetize.io REST API token (secret). Never sent to the browser. */
+  APPETIZE_API_TOKEN?: string;
+  /** Optional override of the Appetize API base URL (private/enterprise instances, tests). */
+  APPETIZE_API_BASE?: string;
 }
 
 let testEnv: AppEnv | null = null;

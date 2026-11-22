@@ -58,6 +58,7 @@ export function sniffImageType(b: Uint8Array): string | null {
   if (b.length >= 12 && String.fromCharCode(...b.slice(4, 8)) === "ftyp" && /^(heic|heix|mif1|msf1|hevc)/.test(String.fromCharCode(...b.slice(8, 12)))) return "image/heic";
   return null;
 }
+export const isGzip = (b: Uint8Array) => b.length >= 3 && b[0] === 0x1f && b[1] === 0x8b && b[2] === 8;
 export const isZip = (b: Uint8Array) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && (b[2] === 3 || b[2] === 5) ;
 
 /** Headers for serving private objects: never inline-render active content, never cache shared. */

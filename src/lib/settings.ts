@@ -12,6 +12,8 @@ export interface PlatformSettings {
   downloadEventRetentionDays: number;
   /** "on": macOS worker validates every upload. "cloud": inspected inside the cloud (no Mac, signature not verified). "off": accepted as-is. */
   validationMode: "on" | "cloud" | "off";
+  /** How clients see a simulator preview: "embed" in the portal page (needs an Appetize plan with embeds) or "link" (opens Appetize's hosted player). */
+  previewDisplay: "embed" | "link";
 }
 
 export const SETTING_DEFAULTS: PlatformSettings = {
@@ -22,6 +24,7 @@ export const SETTING_DEFAULTS: PlatformSettings = {
   auditRetentionDays: 365,
   downloadEventRetentionDays: 180,
   validationMode: "on",
+  previewDisplay: "embed",
 };
 
 export async function getSettings(env: AppEnv): Promise<PlatformSettings> {

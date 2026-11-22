@@ -22,3 +22,10 @@ Schema: [`migrations/0001_init.sql`](../migrations/0001_init.sql). IDs are rando
 Indexes cover FK joins, status filters, `created_at` sorts, token hashes (UNIQUE) and the worker claim path `(status, next_attempt_at)`. Pagination is offset-based with stable `ORDER BY … , id`; lists never load whole tables.
 
 **Retention.** Daily cron: sessions/resets/invitations cleanup; `downloads` (default 180 d) and `audit_logs` (default 365 d) per platform settings; soft-deleted builds purged (DB + R2) after 30 d; orphaned/expired uploads aborted; rate-limit rows pruned.
+
+## Simulator previews (migration 0004)
+| table / column | purpose |
+|---|---|
+| `builds.build_kind` (`ipa` \| `simulator`) | a simulator build is a normal build row, so version history is preserved |
+| `distribution_links.kind` (`install` \| `preview`) | preview links reuse password, expiry, revocation and member checks |
+| `simulator_previews` | one row per simulator build: status, attempts/backoff, Appetize `appetize_public_key`, device, expiry, enabled flag, timestamps |

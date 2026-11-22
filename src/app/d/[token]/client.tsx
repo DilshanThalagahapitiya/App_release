@@ -64,10 +64,10 @@ export function PublicActions({ kind, installHref, token, appName, statusHref }:
     </div>
   );
 }
-export function PasswordForm({ token }: { token: string }) {
+export function PasswordForm({ token, base = "/d" }: { token: string; base?: string }) {
   const [pw, setPw] = React.useState(""); const [err, setErr] = React.useState(""); const [busy, setBusy] = React.useState(false);
   return (
-    <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); setBusy(true); setErr(""); const r = await fetch(`/d/${token}/access`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: pw }) }); setBusy(false); if (r.ok) location.reload(); else setErr(((await r.json()) as { error?: { message?: string } }).error?.message ?? "Could not verify the password."); }}>
+    <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); setBusy(true); setErr(""); const r = await fetch(`${base}/${token}/access`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: pw }) }); setBusy(false); if (r.ok) location.reload(); else setErr(((await r.json()) as { error?: { message?: string } }).error?.message ?? "Could not verify the password."); }}>
       <label className="block text-[13px] font-medium" htmlFor="pw">Password</label>
       <input id="pw" type="password" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} className="h-10 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3" />
       {err && <p role="alert" className="text-[13px] text-[var(--bad)]">{err}</p>}

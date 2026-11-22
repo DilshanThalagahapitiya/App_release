@@ -15,7 +15,7 @@ export interface BuildRow {
   supported_device_families_json: string | null; architectures_json: string | null;
   release_title: string | null; release_notes: string | null; internal_notes: string | null;
   declared_version: string | null; declared_build_number: string | null; distribution_method: string;
-  external_install_url: string | null; validation_status: "pending" | "running" | "completed" | "failed";
+  build_kind: "ipa" | "simulator"; external_install_url: string | null; validation_status: "pending" | "running" | "completed" | "failed";
   eligibility_status: Eligibility; processing_status: string; allow_download_when_ineligible: number;
   publish_status: "unpublished" | "published" | "archived"; uploaded_at: string; validated_at: string | null;
   published_at: string | null; archived_at: string | null; deleted_at: string | null; created_at: string; updated_at: string;
@@ -26,7 +26,7 @@ export interface LinkRow {
   title: string; access_scope: "named_users" | "project_members" | "protected_link"; password_hash: string | null;
   expires_at: string | null; max_downloads: number | null; download_count: number; allow_download: number;
   allow_feedback: number; customer_release_notes: string | null; installation_guidance: string | null;
-  status: "draft" | "active" | "revoked"; created_at: string; revoked_at: string | null;
+  status: "draft" | "active" | "revoked"; kind: "install" | "preview"; created_at: string; revoked_at: string | null;
 }
 
 export interface FeedbackRow {
@@ -34,4 +34,13 @@ export interface FeedbackRow {
   assigned_to_user_id: string | null; category: string; title: string; description: string; severity: string; status: string;
   device_model: string | null; ios_version: string | null; reproduction_steps: string | null; expected_result: string | null;
   actual_result: string | null; contact_preference: string; created_at: string; updated_at: string; resolved_at: string | null;
+}
+
+export interface SimulatorPreviewRow {
+  id: string; organisation_id: string; project_id: string; build_id: string;
+  status: "pending" | "uploading" | "processing" | "ready" | "failed" | "deleted"; status_detail: string | null; error_code: string | null;
+  attempts: number; next_attempt_at: string | null; file_type: "zip" | "tar.gz"; mode: "create" | "update";
+  appetize_public_key: string | null; appetize_version_code: number | null; appetize_disabled: number; enabled: number;
+  device: string; os_version: string | null; expires_at: string | null; uploaded_at: string | null; ready_at: string | null;
+  created_by: string | null; created_at: string; updated_at: string;
 }

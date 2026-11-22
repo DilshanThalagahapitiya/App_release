@@ -25,23 +25,31 @@ export async function derivePublicToken(env: AppEnv, linkId: string): Promise<st
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.URL_SIGNING_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toBase64Url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("dist-link:" + linkId)));
 }
-export const linkUrl = (env: AppEnv, token: string) => `${env.APP_URL}/d/${token}`;
+export const linkUrl = (env: AppEnv, token: string, kind: string = "install") => `${env.APP_URL}/${kind === "preview" ? "p" : "d"}/${token}`;
 
 export async function linkDto(env: AppEnv, l: LinkRow, opts: { withUrl: boolean }) {
   const { token_hash: _t, password_hash, ...rest } = l;
   void _t;
   return {
     ...rest, state: linkState(l), password_protected: !!password_hash,
-    ...(opts.withUrl && l.status !== "revoked" ? { url: linkUrl(env, await derivePublicToken(env, l.id)) } : {}),
+    ...(opts.withUrl && l.status !== "revoked" ? { url: linkUrl(env, await derivePublicToken(env, l.id), l.kind) } : {}),
   };
 }
 
 export async function createLink(env: AppEnv, actor: Actor, buildId: string, input: {
   title?: string; accessScope: LinkRow["access_scope"]; userIds: string[]; password?: string; expiresAt?: string | null; expiresInDays?: number;
-  maxDownloads?: number | null; allowDownload: boolean; allowFeedback: boolean; customerReleaseNotes?: string | null; installationGuidance?: string | null;
+  maxDownloads?: number | null; allowDownload: boolean; allowFeedback: boolean; customerReleaseNotes?: string | null; installationGuidance?: string | null; kind?: "install" | "preview";
 }, req?: Request) {
   const { build, project } = await loadBuild(env, actor, buildId, "distribution:manage");
-  if (build.publish_status !== "published") throw new ApiError("INVALID_STATE", "Publish the build before creating distribution links.");
+  const kind = input.kind ?? "install";
+  if (kind === "preview") {
+    if (build.build_kind !== "simulator") throw new ApiError("INVALID_STATE", "Preview links are only for Interactive Simulator Preview builds.");
+    const pv = await one<{ status: string }>(env.DB, "SELECT status FROM simulator_previews WHERE build_id = ?", build.id);
+    if (!pv || pv.status !== "ready") throw new ApiError("INVALID_STATE", "The simulator preview is not ready yet. Create the link once its status is Ready.");
+  } else {
+    if (build.build_kind === "simulator") throw new ApiError("INVALID_STATE", "This is a simulator build. Create a preview link instead of an install link.");
+    if (build.publish_status !== "published") throw new ApiError("INVALID_STATE", "Publish the build before creating distribution links.");
+  }
   if (input.accessScope === "protected_link" && project.access_policy !== "allow_protected_links")
     throw new ApiError("FORBIDDEN", "This project's policy requires named-user or project-member access. Change the project's customer access policy to allow protected links.");
   if (input.accessScope === "named_users") {
@@ -57,11 +65,11 @@ export async function createLink(env: AppEnv, actor: Actor, buildId: string, inp
   const token = await derivePublicToken(env, id);
   const now = nowIso();
   const stmts = [stmt(env.DB,
-    `INSERT INTO distribution_links (id, organisation_id, project_id, build_id, created_by, token_hash, title, access_scope, password_hash, expires_at, max_downloads, allow_download, allow_feedback, customer_release_notes, installation_guidance, status, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?)`,
-    id, project.organisation_id, project.id, build.id, actor.userId, await hashToken(token), input.title ?? `${build.version ?? "Build"} (${build.build_number ?? "?"})`, input.accessScope,
+    `INSERT INTO distribution_links (id, organisation_id, project_id, build_id, created_by, token_hash, title, access_scope, password_hash, expires_at, max_downloads, allow_download, allow_feedback, customer_release_notes, installation_guidance, status, kind, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?)`,
+    id, project.organisation_id, project.id, build.id, actor.userId, await hashToken(token), input.title ?? `${kind === "preview" ? "Preview " : ""}${build.version ?? "Build"} (${build.build_number ?? "?"})`, input.accessScope,
     input.password ? await hashPassword(input.password) : null, expiresAt, input.maxDownloads ?? null, input.allowDownload ? 1 : 0, input.allowFeedback ? 1 : 0,
-    input.customerReleaseNotes ?? null, input.installationGuidance ?? project.default_install_instructions ?? null, now)];
+    input.customerReleaseNotes ?? null, input.installationGuidance ?? project.default_install_instructions ?? null, kind, now)];
   if (input.accessScope === "named_users") for (const u of new Set(input.userIds)) stmts.push(stmt(env.DB, "INSERT INTO distribution_link_members (id, distribution_link_id, user_id, created_at) VALUES (?,?,?,?)", newId(), id, u, now));
   await batch(env.DB, stmts);
   await audit(env, { organisationId: project.organisation_id, actorUserId: actor.userId, action: "distribution_link.created", resourceType: "distribution_link", resourceId: id, metadata: { buildId, scope: input.accessScope, passwordProtected: !!input.password }, req });
@@ -73,6 +81,7 @@ export async function createLink(env: AppEnv, actor: Actor, buildId: string, inp
  * (used by the Available builds screen). Idempotent; created by the system on behalf of the uploader.
  */
 export async function ensureMemberLink(env: AppEnv, build: BuildRow, project: ProjectRow): Promise<void> {
+  if (build.build_kind === "simulator") return;
   const now = nowIso();
   const has = await one(env.DB, "SELECT id FROM distribution_links WHERE build_id = ? AND access_scope = 'project_members' AND status = 'active' AND (expires_at IS NULL OR expires_at > ?) LIMIT 1", build.id, now);
   if (has) return;
@@ -136,7 +145,7 @@ export async function qrTarget(env: AppEnv, actor: Actor, linkId: string) {
   const { link } = await loadLink(env, actor, linkId);
   const state = linkState(link);
   if (state !== "active") throw new ApiError("INVALID_STATE", `A QR code is not available because the link is ${state}.`);
-  return linkUrl(env, await derivePublicToken(env, link.id));
+  return linkUrl(env, await derivePublicToken(env, link.id), link.kind);
 }
 
 export async function listProjectLinks(env: AppEnv, actor: Actor, projectId?: string) {
@@ -175,7 +184,7 @@ export async function resolveLink(env: AppEnv, req: Request, token: string, opts
   const user = await actorFromRequest(env, req);
   const base = { link, build, project, org, state, user, staffPreview: false };
   if (state !== "active") return { ...base, access: "unavailable", reason: `This link is ${state}.` };
-  if (build.deleted_at || build.publish_status !== "published" || project.status !== "active" || org.status !== "active")
+  if (build.deleted_at || (link.kind !== "preview" && build.publish_status !== "published") || project.status !== "active" || org.status !== "active")
     return { ...base, access: "unavailable", reason: "This build is no longer available." };
 
   // Staff with build:view_internal may always preview (access is still audited via page_open).
@@ -212,7 +221,7 @@ export async function submitLinkPassword(env: AppEnv, req: Request, token: strin
     await audit(env, { organisationId: r.link.organisation_id, actorType: "anonymous", action: "distribution_link.password_failed", resourceType: "distribution_link", resourceId: r.link.id, req });
     throw new ApiError("INVALID_CREDENTIALS", "Incorrect password.");
   }
-  return { cookieName: grantCookieName(r.link.id), cookieValue: await signAccessGrant(env, { lid: r.link.id }, 3600), maxAge: 3600, path: `/d/${token}` };
+  return { cookieName: grantCookieName(r.link.id), cookieValue: await signAccessGrant(env, { lid: r.link.id }, 3600), maxAge: 3600, path: r.link.kind === "preview" ? `/p/${token}` : `/d/${token}` };
 }
 
 export async function logEvent(env: AppEnv, r: Resolved, req: Request, type: "page_open" | "download_started" | "download_completed" | "manifest_requested" | "install_confirmed") {
@@ -233,6 +242,7 @@ export async function latestProfileType(env: AppEnv, buildId: string) {
 }
 
 export async function installAction(env: AppEnv, r: Resolved): Promise<InstallAction> {
+  if (r.build.build_kind === "simulator") return { kind: "none", reason: "This is an interactive simulator preview, not an installable app." };
   const profile = await latestProfileType(env, r.build.id);
   return decideInstallAction({
     distribution_method: r.build.distribution_method, eligibility_status: r.build.eligibility_status, validation_status: r.build.validation_status,

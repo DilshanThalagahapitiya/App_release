@@ -31,10 +31,10 @@ function putPart(url: string, body: Blob, signal: AbortSignal, onBytes: (n: numb
 const parseErr = (t: string) => { try { return JSON.parse(t).error?.message as string; } catch { return ""; } };
 
 /** Multipart upload with per-part retry (resumable: already-uploaded parts are skipped on retry of the same session). */
-export async function uploadIpa(projectId: string, file: File, signal: AbortSignal, set: (s: UploadState) => void, idempotencyKey: string): Promise<{ sessionId: string; sha256: string }> {
+export async function uploadIpa(projectId: string, file: File, signal: AbortSignal, set: (s: UploadState) => void, idempotencyKey: string, kind: "ipa" | "simulator" = "ipa"): Promise<{ sessionId: string; sha256: string }> {
   set({ phase: "hashing", percent: 0, message: "Calculating SHA-256 checksum…" });
   const digest = await hashFile(file, (p) => set({ phase: "hashing", percent: Math.round(p * 100), message: "Calculating SHA-256 checksum…" }), signal);
-  const session = await apiFetch<{ id: string; partSizeBytes: number; totalParts: number; uploadedParts: number[] }>(`/projects/${projectId}/upload-sessions`, { body: { filename: file.name, sizeBytes: file.size, sha256: digest, idempotencyKey }, signal });
+  const session = await apiFetch<{ id: string; partSizeBytes: number; totalParts: number; uploadedParts: number[] }>(`/projects/${projectId}/upload-sessions`, { body: { filename: file.name, sizeBytes: file.size, sha256: digest, idempotencyKey, kind }, signal });
   let doneBytes = 0;
   for (let n = 1; n <= session.totalParts; n++) {
     const start = (n - 1) * session.partSizeBytes; const end = Math.min(file.size, start + session.partSizeBytes);

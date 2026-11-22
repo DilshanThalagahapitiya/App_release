@@ -7,6 +7,7 @@ import { getSettings } from "@/lib/settings";
 import { deliverOutbox } from "@/lib/email";
 import { notify } from "@/lib/notify";
 import { audit } from "@/lib/audit";
+import { runDuePreviews } from "./simulator";
 
 const BUILD_PURGE_AFTER_DAYS = 30;
 
@@ -14,6 +15,7 @@ const BUILD_PURGE_AFTER_DAYS = 30;
 export async function runFrequent(env: AppEnv) {
   const reclaimed = await reclaimExpiredLeases(env);
   const now = nowIso();
+  try { await runDuePreviews(env); } catch (e) { console.error("simulator preview run failed", (e as Error).message); }
 
   // Expire stale upload sessions and abort their multipart uploads so no orphaned parts accrue storage.
   const stale = await all<{ id: string; r2_object_key: string; multipart_upload_id: string | null; status: string }>(env.DB,

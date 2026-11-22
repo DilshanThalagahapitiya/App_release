@@ -26,9 +26,11 @@ class T(unittest.TestCase):
         self.assertEqual(server.read_env(p)["WORKER_TOKEN"], "wkr_x")
 
     def test_mask_and_log_redaction(self):
-        self.assertEqual(server.mask("wkr_Vn0u4TfAAGKrquxT1TiebCXc3m4MF4O9LHH5N4skOOc"), "wkr_Vn0u…OOc"[:-3] + "kOOc")
+        key = "wkr_ExAmPleKeyNotReal1234567890abcdefXYZ"
+        self.assertEqual(server.mask(key), key[:8] + "…" + key[-4:])
         self.assertEqual(server.mask(""), "")
-        self.assertNotIn("Vn0u4TfAAGKr", server.SECRET_RE.sub("wkr_…", "token wkr_Vn0u4TfAAGKrquxT1Tie used"))
+        redacted = server.SECRET_RE.sub("wkr_…", "token " + key + " used")
+        self.assertNotIn("ExAmPleKey", redacted)
 
     def test_host_check(self):
         self.assertTrue(server.host_ok(f"127.0.0.1:{server.PORT}"))
