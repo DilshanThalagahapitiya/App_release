@@ -132,14 +132,19 @@ export function FilterBar({ children }: { children: React.ReactNode }) { return 
 // ---------------------------------------------------------------- dialogs & toasts
 export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode }) {
   const ref = React.useRef<HTMLDivElement>(null);
+  // Keep the latest onClose without re-running the focus effect: parents pass a new inline function on every
+  // render (every keystroke), which used to steal focus from the field being typed in.
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
   React.useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>("input,textarea,select,button")?.focus();
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const root = ref.current;
+    (root?.querySelector<HTMLElement>("input:not([disabled]),textarea:not([disabled]),select:not([disabled])") ?? root?.querySelector<HTMLElement>("footer button"))?.focus();
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") closeRef.current(); };
     document.addEventListener("keydown", h);
     return () => { document.removeEventListener("keydown", h); prev?.focus(); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
