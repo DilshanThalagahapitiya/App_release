@@ -3,6 +3,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CircleDashed, Copy, Download, FileUp, Loader2, QrCode, ShieldCheck, X } from "lucide-react";
 import { apiFetch, fmtBytes, fmtDate, label, ago } from "@/lib/client";
+import { appFromFileList, collectApp, packApp as packAppZip } from "@/lib/zip-folder";
 import { Button, Callout, Card, cx, ErrorState, FormField, Input, KV, LoadingSkeleton, Select, StatusBadge, Textarea, useToast } from "./ui";
 
 export function useApi<T>(key: unknown[], path: string | null, opts: { refetchInterval?: number } = {}) {
@@ -157,16 +158,37 @@ export function DistributionLinkCard({ l, onRevoke, href }: { l: LinkDto; onRevo
 }
 
 // ---------------------------------------------------------------- dropzone
-export function FileDropzone({ file, onFile, disabled, accept = ".ipa", prompt = "Drag and drop an already-signed .ipa here", note = "The file is uploaded as-is. This platform never re-signs or modifies an IPA.", ariaLabel = "Choose IPA file" }: { file: File | null; onFile: (f: File | null) => void; disabled?: boolean; accept?: string; prompt?: string; note?: string; ariaLabel?: string }) {
-  const [over, setOver] = React.useState(false); const input = React.useRef<HTMLInputElement>(null);
+export function FileDropzone({ file, onFile, disabled, accept = ".ipa", prompt = "Drag and drop an already-signed .ipa here", note = "The file is uploaded as-is. This platform never re-signs or modifies an IPA.", ariaLabel = "Choose IPA file", packApp = false }: { file: File | null; onFile: (f: File | null) => void; disabled?: boolean; accept?: string; prompt?: string; note?: string; ariaLabel?: string; packApp?: boolean }) {
+  const [over, setOver] = React.useState(false); const input = React.useRef<HTMLInputElement>(null); const folder = React.useRef<HTMLInputElement>(null);
+  const [pack, setPack] = React.useState<{ name: string; pct: number } | null>(null); const [msg, setMsg] = React.useState("");
+  async function packIt(app: Awaited<ReturnType<typeof collectApp>> | ReturnType<typeof appFromFileList>) {
+    if ("error" in app) { setMsg(app.error); return; }
+    setMsg(""); setPack({ name: app.name, pct: 0 });
+    try { const f = await packAppZip(app, (d, t) => setPack({ name: app.name, pct: Math.round((d / t) * 100) })); onFile(f); } catch { setMsg("Could not pack the folder. Compress the .app to a .zip and drop that instead."); }
+    setPack(null);
+  }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault(); setOver(false); if (disabled) return;
+    // Entries must be read synchronously inside the event.
+    const item = packApp ? e.dataTransfer.items?.[0] : undefined;
+    const entry = item && (item as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry?.();
+    if (entry && (entry as { isDirectory?: boolean }).isDirectory) { void collectApp(entry).then(packIt); return; }
+    if (e.dataTransfer.files[0]) { setMsg(""); onFile(e.dataTransfer.files[0]); }
+  }
   return (
-    <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); if (!disabled && e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); }}
+    <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={onDrop}
       className={cx("flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-10 text-center", over ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border-strong)]")}>
       <FileUp className="h-8 w-8 text-[var(--text-3)]" aria-hidden />
-      {file ? <p className="font-medium">{file.name} <span className="muted">({fmtBytes(file.size)})</span></p> : <p className="font-medium">{prompt}</p>}
+      {pack ? <div className="w-full max-w-xs space-y-2" role="status"><p className="font-medium">Packing {pack.name}.app…</p><div className="h-2 overflow-hidden rounded-full bg-[var(--surface-2)]"><div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${pack.pct}%` }} /></div></div>
+        : file ? <p className="font-medium">{file.name} <span className="muted">({fmtBytes(file.size)})</span></p> : <p className="font-medium">{prompt}</p>}
       <p className="text-xs muted">{note}</p>
-      <input ref={input} type="file" accept={accept} className="sr-only" aria-label={ariaLabel} disabled={disabled} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-      <Button onClick={() => input.current?.click()} disabled={disabled}>{file ? "Choose a different file" : "Choose file"}</Button>
+      {msg && <p className="text-[13px] text-[var(--bad)]" role="alert">{msg}</p>}
+      <input ref={input} type="file" accept={accept} className="sr-only" aria-label={ariaLabel} disabled={disabled} onChange={(e) => { setMsg(""); onFile(e.target.files?.[0] ?? null); }} />
+      {packApp && <input ref={folder} type="file" className="sr-only" aria-label="Choose the .app folder" disabled={disabled} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(e) => { if (e.target.files?.length) void packIt(appFromFileList(e.target.files)); e.target.value = ""; }} />}
+      <div className="flex flex-wrap justify-center gap-2">
+        <Button onClick={() => input.current?.click()} disabled={disabled || !!pack}>{file ? "Choose a different file" : "Choose file"}</Button>
+        {packApp && <Button onClick={() => folder.current?.click()} disabled={disabled || !!pack}>Choose .app folder</Button>}
+      </div>
     </div>
   );
 }

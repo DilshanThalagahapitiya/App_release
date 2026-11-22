@@ -43,7 +43,7 @@ export default function UploadBuild() {
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Card><FileDropzone file={file} onFile={(x) => { setFile(x); idem.current = crypto.randomUUID(); setState({ phase: "idle", percent: 0, message: "" }); }} disabled={busy}
-            accept={sim ? ".zip,.tar.gz,.tgz" : ".ipa"} prompt={sim ? "Drag and drop the zipped Simulator .app here" : undefined} note={sim ? "A .zip (or .tar.gz) of the iOS Simulator .app folder. Device .ipa files cannot run in the preview." : undefined} ariaLabel={sim ? "Choose simulator archive" : undefined} />
+            accept={sim ? ".zip,.tar.gz,.tgz" : ".ipa"} packApp={sim} prompt={sim ? "Drag the Simulator .app folder here (or a .zip)" : undefined} note={sim ? "Drop the .app folder straight from Finder and it is zipped for you. Device .ipa files cannot run in the preview." : undefined} ariaLabel={sim ? "Choose simulator archive" : undefined} />
             {badFile && <div className="mt-3"><Callout tone="bad">{sim ? (fileName.endsWith(".ipa") ? "A device .ipa cannot run in the simulator preview. Upload a zipped iOS Simulator .app (.zip or .tar.gz) instead." : "Simulator builds must be a .zip or .tar.gz of the .app folder.") : "Only .ipa files are accepted."}</Callout></div>}</Card>
           <Card title="Release details"><div className="space-y-4">
             <FormField label="Release title" htmlFor="u-title"><Input id="u-title" value={f.releaseTitle} onChange={set("releaseTitle")} /></FormField>
