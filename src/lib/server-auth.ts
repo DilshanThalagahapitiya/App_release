@@ -9,7 +9,8 @@ export async function requireSession(area: "admin" | "customer" | "any" = "any")
   const env = await getEnv();
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const actor = await actorFromToken(env, token);
-  if (!actor) redirect("/auth/login?expired=1");
+  // Only say "session expired" if there was a session cookie; a first visit just goes to the login page.
+  if (!actor) redirect(token ? "/auth/login?expired=1" : "/auth/login");
   const profile = await me(env, actor);
   if (area === "admin" && profile.portal !== "admin") redirect("/access-denied");
   return { env, actor, profile };
