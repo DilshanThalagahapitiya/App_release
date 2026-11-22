@@ -5,6 +5,7 @@ import { Bell, Box, ChevronsLeft, ChevronsRight, FolderKanban, Gauge, LogOut, Me
 import { apiFetch, ago } from "@/lib/client";
 import { Button, cx, StatusBadge } from "./ui";
 import { Brand } from "./brand";
+import { BackButton, InstallHint } from "./app-bits";
 
 export interface Me { id: string; email: string; displayName: string; isPlatformOwner: boolean; memberships: { organisation_id: string; name: string; role: string }[]; portal: "admin" | "customer"; unreadNotifications: number; emailConfigured: boolean }
 type Item = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; ownerOnly?: boolean; adminOnly?: boolean };
@@ -23,6 +24,7 @@ const CUSTOMER: Item[] = [
   { href: "/portal/notifications", label: "Notifications", icon: Bell }, { href: "/portal/profile", label: "Profile / Account", icon: UserCircle },
 ];
 
+const parentOf = (p: string) => { const a = p.split("/").filter(Boolean); a.pop(); return "/" + a.join("/") || "/"; };
 function setTheme(t: "light" | "dark") { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch { /* storage may be unavailable */ } }
 
 export function AppShell({ me, area, children }: { me: Me; area: "admin" | "customer"; children: React.ReactNode }) {
@@ -35,6 +37,8 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
   }, []);
   const items = (area === "admin" ? ADMIN : CUSTOMER).filter((i) => (!i.ownerOnly || me.isPlatformOwner) && (!i.adminOnly || me.isPlatformOwner || me.memberships.some((m) => m.role === "org_admin")));
   const active = (h: string) => (h === "/app" || h === "/portal" ? path === h : path === h || path.startsWith(h + "/"));
+  const roots = items.map((i) => i.href);
+  const isRoot = !path || roots.includes(path) || path === "/app" || path === "/portal";
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-0.5 p-2">
       {items.map((i) => (
@@ -60,7 +64,7 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
       <div className="min-w-0 flex-1">
         <header className="bar-accent safe-t sticky top-0 z-30 flex min-h-14 items-center justify-between gap-3 bg-[var(--surface)]/95 px-4 shadow-[var(--shadow)] backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="lg:hidden"><Brand subtitle={false} /></span>
+            <span className="lg:hidden">{isRoot ? <Brand subtitle={false} /> : <BackButton fallback={parentOf(path)} />}</span>
             <span className="hidden truncate text-[13px] text-[var(--text-2)] lg:inline">{me.isPlatformOwner ? "Platform Owner" : me.memberships.map((m) => m.name).join(", ") || "No organisation"}</span>
           </div>
           <div className="flex items-center gap-1">
@@ -68,7 +72,7 @@ export function AppShell({ me, area, children }: { me: Me; area: "admin" | "cust
           </div>
         </header>
         <TopTabs items={items} active={active} onMore={() => setMobile(true)} />
-        <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 md:pb-6 md:pt-5 lg:pt-6">{children}</main>
+        <main id="main" className="mx-auto max-w-7xl px-4 pb-28 pt-5 sm:px-6 md:pb-6 md:pt-5 lg:pt-6"><div className="mb-4 lg:hidden"><InstallHint /></div>{children}</main>
       </div>
       <TabBar items={items} active={active} onMore={() => setMobile(true)} moreOpen={mobile} />
     </div>

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { BackButton, InstallHint } from "./app-bits";
 import { CircleHelp, Download, FileText, MessageSquare, PackageCheck, type LucideIcon } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = { install: Download, notes: FileText, feedback: MessageSquare, help: CircleHelp };
@@ -14,11 +15,13 @@ export function AppFrame({ title, tabs, initial }: { title: string; tabs: FrameT
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
   const select = (id: string) => { setActive(id); try { window.scrollTo({ top: 0 }); } catch { /* ignore */ } };
   const many = tabs.length > 1;
+  const [canBack, setCanBack] = React.useState(false);
+  React.useEffect(() => { setCanBack(history.length > 1); }, []);
   return (
     <div className="min-h-screen bg-[var(--bg)]">
       <header className="safe-t sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
         <div className="mx-auto flex h-12 max-w-2xl items-center justify-center px-4">
-          <span className="absolute left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] text-white" aria-hidden><PackageCheck className="h-4 w-4" /></span>
+          {canBack ? <span className="absolute left-2"><BackButton /></span> : <span className="absolute left-4 flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] text-white" aria-hidden><PackageCheck className="h-4 w-4" /></span>}
           <h1 className="max-w-[60%] truncate text-[17px] font-semibold">{title}</h1>
         </div>
         {many && (
@@ -29,7 +32,7 @@ export function AppFrame({ title, tabs, initial }: { title: string; tabs: FrameT
             </div>
           </div>)}
       </header>
-      <main className={`mx-auto max-w-2xl space-y-4 px-4 pt-4 ${many ? "pb-28 md:pb-10" : "pb-10"}`}>{current.content}</main>
+      <main className={`mx-auto max-w-2xl space-y-4 px-4 pt-4 ${many ? "pb-28 md:pb-10" : "pb-10"}`}><InstallHint />{current.content}</main>
       {many && (
         <nav aria-label="Tabs" className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur md:hidden">
           <div className="mx-auto flex max-w-xl">
