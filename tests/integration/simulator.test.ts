@@ -262,12 +262,18 @@ describe("simulator preview: client access", () => {
     expect(calls[calls.length - 1].body).toMatchObject({ disabled: true });
   });
 
-  it("shows preview links to project members in Available builds, once per build", async () => {
-    const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Sim10"); mockAppetize();
-    const buildId = await readyBuild(S, t);
-    await call(links.POST, { cookie: t.adminCookie, params: { buildId }, body: linkBody() });
+  it("shows a Ready preview to project members (QA) in Available builds automatically, once per build, and hides it from other organisations", async () => {
+    const S = await createScenario(); S.env.APPETIZE_API_TOKEN = TOKEN; const t = await S.tenant("Sim10"); const other = await S.tenant("Other10"); mockAppetize();
+    const r = await uploadSim(S, t, simZip()); const buildId = r.b!.data.id as string;
+    expect((await call(portalBuilds.GET, { cookie: t.testerCookie })).data.length).toBe(0); // not Ready yet
+    await runPreviewUpload(S.env, await previewIdOf(S as never, buildId));
+    await call(links.POST, { cookie: t.adminCookie, params: { buildId }, body: linkBody() }); // staff add another link: still one row
     const list = await call(portalBuilds.GET, { cookie: t.testerCookie });
-    expect(list.data.length).toBe(1); expect(list.data[0].path).toMatch(/^\/p\//);
+    expect(list.data.length).toBe(1); expect(list.data[0]).toMatchObject({ link_kind: "preview", version: "2.0.1", build_number: "42" }); expect(list.data[0].path).toMatch(/^\/p\//);
+    expect((await call(portalBuilds.GET, { cookie: other.testerCookie })).data.length).toBe(0);
+    // turning the preview off removes it from the QA list's usable state
+    await call(previewRoute.PATCH, { cookie: t.adminCookie, method: "PATCH", params: { buildId }, body: { enabled: false } });
+    expect(await previewPublicView(S.env, buildId)).toMatchObject({ available: false });
   });
 
   it("blocks unauthorised users from uploading, managing or reading another project's previews", async () => {

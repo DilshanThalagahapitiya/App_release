@@ -7,6 +7,8 @@ import { addSeconds, nowIso } from "@/lib/time";
 import { audit } from "@/lib/audit";
 import { loadBuild, loadProject } from "@/lib/access";
 import { signedFileUrl } from "@/lib/storage";
+import { derivePublicToken } from "@/services/distribution";
+import { hashToken } from "@/lib/crypto";
 import { createApp, updateApp, setAppDisabled, deleteApp, appetizeConfigured, embedUrl, hostedUrl, AppetizeError, IOS_DEVICES } from "@/lib/appetize";
 import { getSettings } from "@/lib/settings";
 import { detectArchiveKind, inspectSimulatorTarGz, inspectSimulatorZip, SimulatorInspectError, type SimulatorInspection } from "@/lib/simulator-inspect";
@@ -123,12 +125,32 @@ export async function runPreviewUpload(env: AppEnv, previewId: string): Promise<
     const app = p.mode === "update" && p.appetize_public_key ? await updateApp(env, p.appetize_public_key, input) : await createApp(env, input);
     await run(env.DB, "UPDATE simulator_previews SET status = 'ready', status_detail = NULL, error_code = NULL, appetize_public_key = ?, appetize_version_code = ?, appetize_disabled = 0, next_attempt_at = NULL, ready_at = ?, updated_at = ? WHERE id = ?",
       app.publicKey, app.versionCode, nowIso(), nowIso(), p.id);
+    await ensurePreviewMemberLink(env, p.id).catch(() => undefined);
     await audit(env, { organisationId: p.organisation_id, action: "simulator_preview.ready", resourceType: "build", resourceId: p.build_id, metadata: { mode: p.mode } });
     return { status: "ready" };
   } catch (e) {
     if (e instanceof AppetizeError) return fail(e.code, e.message, e.retryable);
     return fail("INTERNAL", "Unexpected error while uploading to Appetize.", true);
   }
+}
+
+/**
+ * Every Ready preview is shown to the project's members (QA testers) in their app under "Available builds":
+ * a standard "project members" preview link, created by the system for the uploader. Staff can revoke it on the Preview tab.
+ */
+export async function ensurePreviewMemberLink(env: AppEnv, previewId: string): Promise<void> {
+  const p = await one<SimulatorPreviewRow>(env.DB, "SELECT * FROM simulator_previews WHERE id = ?", previewId);
+  const build = p ? await one<BuildRow>(env.DB, "SELECT * FROM builds WHERE id = ? AND deleted_at IS NULL", p.build_id) : null;
+  if (!p || !build || p.status !== "ready") return;
+  const has = await one(env.DB, "SELECT id FROM distribution_links WHERE build_id = ? AND kind = 'preview' AND access_scope = 'project_members' AND status = 'active' LIMIT 1", build.id);
+  if (has) return;
+  const createdBy = build.uploaded_by ?? p.created_by;
+  if (!createdBy) return;
+  const id = newId(); const token = await derivePublicToken(env, id);
+  await run(env.DB,
+    `INSERT INTO distribution_links (id, organisation_id, project_id, build_id, created_by, token_hash, title, access_scope, expires_at, allow_download, allow_feedback, status, kind, created_at)
+     VALUES (?,?,?,?,?,?,?, 'project_members', ?, 0, 1, 'active', 'preview', ?)`,
+    id, p.organisation_id, p.project_id, build.id, createdBy, await hashToken(token), `Preview ${build.version ?? ""} (${build.build_number ?? "?"})`.trim(), p.expires_at, nowIso());
 }
 
 /** Cron: start due uploads and recover ones that were interrupted. */
